@@ -227,7 +227,11 @@ step "Installing Gemini CLI and extensions"
 if ! command -v gemini &>/dev/null; then
     NPM_BIN="${HOME}/.nix-profile/bin/npm"
     if [ -x "$NPM_BIN" ]; then
-        "$NPM_BIN" install -g @google/gemini-cli
+        # Install to ~/.local so npm doesn't try to write into the read-only /nix/store
+        NPM_PREFIX="$HOME/.local"
+        mkdir -p "$NPM_PREFIX"
+        "$NPM_BIN" install -g --prefix "$NPM_PREFIX" @google/gemini-cli
+        export PATH="$NPM_PREFIX/bin:$PATH"
         if command -v gemini &>/dev/null; then
             gemini extension install conductor || true
             gemini mcp install context7 || true
