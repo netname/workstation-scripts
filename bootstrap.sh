@@ -27,8 +27,8 @@ warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 
 # — Variables – substitute these two values before pushing
-GITHUB_USER="yourusername"                                   # ← your GitHub username
-DOTFILES_REPO="git@github.com:yourusername/dotfiles.git"    # ← your PRIVATE dotfiles SSH URL
+GITHUB_USER="netname"                                   # ← your GitHub username
+DOTFILES_REPO="git@github.com:netname/dotfiles.git"    # ← your PRIVATE dotfiles SSH URL
 
 DOTFILES_DIR="$HOME/dotfiles"
 NERD_FONT_VERSION="v3.2.1"
@@ -74,7 +74,10 @@ read -rp "Press Enter once the key is registered on GitHub... "
 echo ""
 
 # Verify the key works before attempting to clone
-if ! ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+# Note: ssh -T git@github.com always exits with code 1 (GitHub denies shell access),
+# so we capture output separately to avoid pipefail treating it as a failure.
+SSH_OUTPUT=$(ssh -T git@github.com 2>&1 || true)
+if ! echo "$SSH_OUTPUT" | grep -q "successfully authenticated"; then
     warn "SSH authentication test failed. Verify the key is registered and try again."
     warn "You can re-run this script after registering the key – it is idempotent."
     exit 1
@@ -122,14 +125,14 @@ ok "Home Manager applied"
 
 # — Step 5: Install WezTerm via Flatpak
 step "Installing WezTerm"
-if ! command -v wezterm &>/dev/null && ! flatpak list 2>/dev/null | grep -q wezterm; then
-    flatpak remote-add --if-not-exists flathub \
+if ! command -v wezterm &>/dev/null && ! flatpak list --user 2>/dev/null | grep -q wezterm; then
+    flatpak remote-add --user --if-not-exists flathub \
         https://flathub.org/repo/flathub.flatpakrepo
-    flatpak install -y flathub org.wezfurlong.wezterm
+    flatpak install --user -y flathub org.wezfurlong.wezterm
     # Expose the Flatpak binary on PATH via a wrapper
-    sudo ln -sf /var/lib/flatpak/exports/bin/org.wezfurlong.wezterm \
-        /usr/local/bin/wezterm
-    ok "WezTerm installed via Flatpak"
+    ln -sf "$HOME/.local/share/flatpak/exports/bin/org.wezfurlong.wezterm" \
+        "$HOME/.local/bin/wezterm"
+    ok "WezTerm installed via Flatpak (user install)"
 else
     ok "WezTerm already installed – skipping"
 fi
