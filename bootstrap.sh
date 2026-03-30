@@ -5,7 +5,7 @@
 # Run with: bash <(curl -fsSL https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh)
 #
 # What this script does:
-#   1. Installs system dependencies
+#   1. Installs system dependencies and sets zsh as the login shell
 #   2. Generates an SSH key and PAUSES for you to register it on GitHub
 #   3. Clones your PRIVATE dotfiles repo via SSH
 #   4. Installs Nix + Home Manager and builds your environment
@@ -37,10 +37,19 @@ NERD_FONT_NAME="JetBrainsMono"
 echo -e "${GREEN}🚀 Starting workstation bootstrap...${NC}"
 
 # — Step 1: System dependencies
-step "Installing system dependencies (git, curl, openssh-client, flatpak)"
+step "Installing system dependencies (git, curl, openssh-client, flatpak, zsh)"
 sudo apt-get update -qq
-sudo apt-get install -y git curl openssh-client flatpak xdg-desktop-portal-gtk
+sudo apt-get install -y git curl openssh-client flatpak xdg-desktop-portal-gtk zsh
 ok "System dependencies installed"
+
+# — Step 1b: Set zsh as login shell
+step "Setting zsh as login shell"
+if [ "$(getent passwd "$USER" | cut -d: -f7)" != "/usr/bin/zsh" ]; then
+    chsh -s /usr/bin/zsh
+    ok "Login shell changed to zsh (takes effect on next login)"
+else
+    ok "Login shell already set to zsh – skipping"
+fi
 
 # — Step 2: Generate SSH key and register on GitHub
 # This step runs before cloning the dotfiles repo because the dotfiles repo
