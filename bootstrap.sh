@@ -90,6 +90,7 @@ if [ ! -d "$DOTFILES_DIR" ]; then
     git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
     ok "Dotfiles cloned to $DOTFILES_DIR"
 else
+    git -C "$DOTFILES_DIR" stash --include-untracked 2>/dev/null || true
     git -C "$DOTFILES_DIR" pull --rebase
     ok "Dotfiles already present – pulled latest"
 fi
