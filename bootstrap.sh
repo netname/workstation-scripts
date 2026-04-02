@@ -2,7 +2,7 @@
 # bootstrap.sh
 # Idempotent workstation setup script.
 # Lives in: workstation-scripts/ (PUBLIC repo) – fetched via curl
-# Run with: bash <(curl -fsSL https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh)
+# Run with: bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh)
 #
 # What this script does:
 #   1. Installs system dependencies and sets zsh as the login shell
@@ -140,6 +140,7 @@ if ! command -v wezterm &>/dev/null && ! flatpak list --user 2>/dev/null | grep 
         https://flathub.org/repo/flathub.flatpakrepo
     flatpak install --user -y flathub org.wezfurlong.wezterm
     # Expose the Flatpak binary on PATH via a wrapper
+    mkdir -p "$HOME/.local/bin"
     ln -sf "$HOME/.local/share/flatpak/exports/bin/org.wezfurlong.wezterm" \
         "$HOME/.local/bin/wezterm"
     ok "WezTerm installed via Flatpak (user install)"
