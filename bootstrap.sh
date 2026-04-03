@@ -6,13 +6,14 @@
 #
 # What this script does:
 #   1. Installs system dependencies and sets zsh as the login shell
-#   2. Generates an SSH key and PAUSES for you to register it on GitHub
+#   2. Verifies the SSH key is present and authenticated with GitHub
 #   3. Clones your PRIVATE dotfiles repo via SSH
 #   4. Installs Nix + Home Manager and builds your environment
 #   5. Installs WezTerm, Docker, fonts, tmux plugins, Neovim, VS Code
 #
-# The only manual step is registering the SSH key (Step 2). Everything else
-# runs without input.
+# PREREQUISITE: Generate and register your SSH key on GitHub before running
+# this script (Quick Start Step 3). The bootstrap runs fully automatically
+# with no pauses once the key is in place.
 
 set -euo pipefail
 
@@ -51,44 +52,29 @@ else
     ok "Login shell already set to zsh – skipping"
 fi
 
-# — Step 2: Generate SSH key and register on GitHub
-# This step runs before cloning the dotfiles repo because the dotfiles repo
-# is PRIVATE – we need an SSH key to access it.
-# The bootstrap pauses here so you can add the key to GitHub.
-step "Setting up SSH key for GitHub"
+# — Step 2: Verify SSH key (prerequisite – see §Quick Start Step 3)
+# The SSH key must be generated and registered on GitHub before running
+# this script. See the Quick Start guide for instructions.
+step "Verifying SSH key for GitHub"
 if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-    ssh-keygen -t ed25519 -C "${GITHUB_USER}@workstation-${HOSTNAME}" -f \
-        "$HOME/.ssh/id_ed25519" -N ""
-    ok "SSH key generated"
-else
-    ok "SSH key already exists – skipping generation"
+    echo -e "${RED}✗ SSH key not found at ~/.ssh/id_ed25519${NC}"
+    echo ""
+    echo "Generate and register an SSH key before running bootstrap:"
+    echo "  ssh-keygen -t ed25519 -C \"${GITHUB_USER}@workstation\" -f ~/.ssh/id_ed25519 -N \"\""
+    echo "  cat ~/.ssh/id_ed25519.pub"
+    echo "Then paste the key at https://github.com/settings/keys and verify:"
+    echo "  ssh -T git@github.com"
+    exit 1
 fi
 
-echo ""
-echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
-echo -e "${YELLOW} ACTION REQUIRED – Register your SSH key on GitHub${NC}"
-echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
-echo ""
-echo "Your public key:"
-echo ""
-cat "$HOME/.ssh/id_ed25519.pub"
-echo ""
-echo "Steps:"
-echo "  1. Copy the key above (the entire line starting with ssh-ed25519)"
-echo "  2. Open https://github.com/settings/keys in your browser"
-echo "  3. Click 'New SSH key'"
-echo "  4. Paste the key and save"
-echo ""
-read -rp "Press Enter once the key is registered on GitHub... "
-echo ""
-
-# Verify the key works before attempting to clone
 # Note: ssh -T git@github.com always exits with code 1 (GitHub denies shell access),
 # so we capture output separately to avoid pipefail treating it as a failure.
 SSH_OUTPUT=$(ssh -T git@github.com 2>&1 || true)
 if ! echo "$SSH_OUTPUT" | grep -q "successfully authenticated"; then
-    warn "SSH authentication test failed. Verify the key is registered and try again."
-    warn "You can re-run this script after registering the key – it is idempotent."
+    echo -e "${RED}✗ SSH authentication to GitHub failed${NC}"
+    echo ""
+    echo "Ensure your public key is registered at https://github.com/settings/keys"
+    echo "then verify with: ssh -T git@github.com"
     exit 1
 fi
 ok "SSH key verified – GitHub authentication successful"
