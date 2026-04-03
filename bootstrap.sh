@@ -37,6 +37,22 @@ NERD_FONT_NAME="JetBrainsMono"
 
 echo -e "${GREEN}🚀 Starting workstation bootstrap...${NC}"
 
+# — Pre-flight: Ensure all user-owned XDG directories exist before any sudo call.
+# Some sudo-invoked tools (apt, gpg) can trigger git or XDG path resolution that
+# implicitly creates ~/.config/ owned by root, causing "Permission denied" errors
+# in later git config --global calls. Creating them here (as the current user)
+# guarantees correct ownership for the entire script run.
+step "Pre-creating user-owned directories"
+mkdir -p \
+    "$HOME/.config/git" \
+    "$HOME/.config/wezterm" \
+    "$HOME/.config/tmux" \
+    "$HOME/.local/bin" \
+    "$HOME/.local/share/fonts/NerdFonts" \
+    "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+ok "User directories ready"
+
 # — Step 1: System dependencies
 step "Installing system dependencies (git, curl, openssh-client, flatpak, zsh)"
 sudo apt-get update -qq
@@ -126,7 +142,6 @@ if ! command -v wezterm &>/dev/null && ! flatpak list --user 2>/dev/null | grep 
         https://flathub.org/repo/flathub.flatpakrepo
     flatpak install --user -y flathub org.wezfurlong.wezterm
     # Expose the Flatpak binary on PATH via a wrapper
-    mkdir -p "$HOME/.local/bin"
     ln -sf "$HOME/.local/share/flatpak/exports/bin/org.wezfurlong.wezterm" \
         "$HOME/.local/bin/wezterm"
     ok "WezTerm installed via Flatpak (user install)"
@@ -138,7 +153,6 @@ fi
 step "Installing JetBrainsMono Nerd Font"
 FONT_DIR="$HOME/.local/share/fonts/NerdFonts"
 if [ ! -d "$FONT_DIR" ] || [ -z "$(ls -A "$FONT_DIR" 2>/dev/null)" ]; then
-    mkdir -p "$FONT_DIR"
     FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_FONT_VERSION}/${NERD_FONT_NAME}.zip"
     FONT_ZIP="/tmp/${NERD_FONT_NAME}.zip"
     curl -fsSL "$FONT_URL" -o "$FONT_ZIP"
@@ -319,7 +333,7 @@ fi
 
 # — Step 16: Symlink user-managed dotfiles
 step "Symlinking user-managed dotfiles"
-mkdir -p "$HOME/.config/wezterm" "$HOME/.config/tmux" "$HOME/.local/bin"
+# Directories were pre-created in the pre-flight block above.
 
 # WezTerm config
 ln -sf "$DOTFILES_DIR/wezterm/wezterm.lua" "$HOME/.config/wezterm/wezterm.lua"
