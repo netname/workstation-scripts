@@ -16,12 +16,14 @@
 #   9.  Verifies GitHub CLI (installed by Home Manager; apt fallback)
 #   10. Configures gh pager (delta – not manageable via Home Manager)
 #   11. Installs Gemini CLI + Conductor + Context7 MCP
-#   12. Installs tmux Plugin Manager and plugins headlessly
-#   13. Stages LazyVim starter into dotfiles
-#   14. Runs LazyVim headless plugin sync
-#   15. Installs VS Code via apt repository
-#   16. Installs VS Code extensions
-#   17. Symlinks user-managed dotfiles (WezTerm, tmux, sessionizer)
+#   12. Symlinks user-managed dotfiles (WezTerm, tmux, sessionizer)
+#         ↑ Must precede TPM and LazyVim: both need symlinks in place
+#           before their headless installs can locate the config files.
+#   13. Installs tmux Plugin Manager and plugins headlessly
+#   14. Stages LazyVim starter into dotfiles
+#   15. Runs LazyVim headless plugin sync
+#   16. Installs VS Code via apt repository
+#   17. Installs VS Code extensions (from dotfiles/vscode/extensions.txt)
 #
 # NOTE: git identity (user.name, user.email), delta pager, and aliases are
 # managed entirely by Home Manager via programs.git in home.nix. The bootstrap
@@ -258,7 +260,21 @@ else
     ok "Gemini CLI already installed – skipping"
 fi
 
-# ── Step 13: Install tmux Plugin Manager and plugins ─────────────────────────
+# ── Step 13: Symlink user-managed dotfiles ───────────────────────────────────
+# Must run BEFORE Step 13 (TPM) and Step 15 (LazyVim headless sync).
+# TPM's headless install_plugins.sh reads TMUX_CONF to find the plugin list;
+# that path must resolve to an actual file before the script runs.
+# Directories were pre-created in the pre-flight block above.
+step "Symlinking user-managed dotfiles"
+ln -sf "$DOTFILES_DIR/wezterm/wezterm.lua" "$HOME/.config/wezterm/wezterm.lua"
+ln -sf "$DOTFILES_DIR/tmux/tmux.conf"      "$HOME/.config/tmux/tmux.conf"
+if [ -f "$DOTFILES_DIR/scripts/sessionizer" ]; then
+    chmod +x "$DOTFILES_DIR/scripts/sessionizer"
+    ln -sf "$DOTFILES_DIR/scripts/sessionizer" "$HOME/.local/bin/sessionizer"
+fi
+ok "Dotfiles symlinked"
+
+# ── Step 14: Install tmux Plugin Manager and plugins ─────────────────────────
 step "Installing tmux Plugin Manager (TPM) and plugins"
 TPM_DIR="$HOME/.tmux/plugins/tpm"
 if [ ! -d "$TPM_DIR" ]; then
@@ -267,16 +283,19 @@ if [ ! -d "$TPM_DIR" ]; then
 else
     ok "TPM already installed – skipping clone"
 fi
-if [ -f "$DOTFILES_DIR/tmux/tmux.conf" ]; then
+# TMUX_CONF must point to the symlinked config (XDG location, not ~/.tmux.conf)
+# so TPM can find the plugin list during the headless install.
+if [ -f "$HOME/.config/tmux/tmux.conf" ]; then
+    TMUX_CONF="$HOME/.config/tmux/tmux.conf" \
     TMUX_PLUGIN_MANAGER_PATH="${HOME}/.tmux/plugins" \
         "$TPM_DIR/scripts/install_plugins.sh" >/dev/null 2>&1 || true
     ok "TPM plugins installed headlessly"
 else
-    warn "tmux/tmux.conf not found in dotfiles – skipping TPM plugin install"
-    warn "Populate tmux/tmux.conf and re-run bootstrap, or press prefix+I in tmux"
+    warn "~/.config/tmux/tmux.conf not found – skipping TPM plugin install"
+    warn "Re-run bootstrap or press prefix+I inside tmux to install plugins"
 fi
 
-# ── Step 14: Stage LazyVim starter into dotfiles ──────────────────────────────
+# ── Step 15: Stage LazyVim starter into dotfiles ──────────────────────────────
 step "Staging LazyVim starter"
 NVIM_DIR="$DOTFILES_DIR/nvim"
 if [ ! -s "$NVIM_DIR/init.lua" ]; then
@@ -289,7 +308,7 @@ else
     ok "LazyVim already staged – skipping"
 fi
 
-# ── Step 15: Run LazyVim headless plugin sync ─────────────────────────────────
+# ── Step 16: Run LazyVim headless plugin sync ─────────────────────────────────
 step "Running LazyVim headless plugin sync"
 NVIM_BIN="${HOME}/.nix-profile/bin/nvim"
 if [ -x "$NVIM_BIN" ]; then
@@ -300,7 +319,7 @@ else
     warn "Run ':Lazy sync' manually on first Neovim open"
 fi
 
-# ── Step 16: Install VS Code via apt repository ───────────────────────────────
+# ── Step 17: Install VS Code via apt repository ───────────────────────────────
 # apt repository – NOT snap (snap blocks /nix/store access).
 step "Installing VS Code"
 if ! command -v code &>/dev/null; then
@@ -318,12 +337,12 @@ else
     ok "VS Code already installed – skipping"
 fi
 
-# ── Step 17: Install VS Code extensions ──────────────────────────────────────
+# ── Step 18: Install VS Code extensions ──────────────────────────────────────
 step "Installing VS Code extensions"
 EXTENSIONS_FILE="$DOTFILES_DIR/vscode/extensions.txt"
 if [ -f "$EXTENSIONS_FILE" ] && command -v code &>/dev/null; then
     while IFS= read -r ext || [ -n "$ext" ]; do
-        [[ -z "$ext" ]] || [[ "$ext" == \#* ]] && continue
+        [[ -z "$ext" || "$ext" == \#* ]] && continue
         code --install-extension "$ext" --force >/dev/null 2>&1 || \
             warn "Failed to install extension: $ext"
     done < "$EXTENSIONS_FILE"
@@ -331,17 +350,6 @@ if [ -f "$EXTENSIONS_FILE" ] && command -v code &>/dev/null; then
 else
     warn "vscode/extensions.txt not found or code not on PATH – skipping extensions"
 fi
-
-# ── Step 18: Symlink user-managed dotfiles ────────────────────────────────────
-# Directories were pre-created in the pre-flight block above.
-step "Symlinking user-managed dotfiles"
-ln -sf "$DOTFILES_DIR/wezterm/wezterm.lua" "$HOME/.config/wezterm/wezterm.lua"
-ln -sf "$DOTFILES_DIR/tmux/tmux.conf"      "$HOME/.config/tmux/tmux.conf"
-if [ -f "$DOTFILES_DIR/scripts/sessionizer" ]; then
-    chmod +x "$DOTFILES_DIR/scripts/sessionizer"
-    ln -sf "$DOTFILES_DIR/scripts/sessionizer" "$HOME/.local/bin/sessionizer"
-fi
-ok "Dotfiles symlinked"
 
 # ── Complete ──────────────────────────────────────────────────────────────────
 echo ""
