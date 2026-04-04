@@ -17,6 +17,9 @@
 
 set -euo pipefail
 
+# Ensure sudo credentials are cached before any piped execution
+sudo -v
+
 # — Colours
 RED='\033[0;31m'
 GREEN='\033[0;32m'
