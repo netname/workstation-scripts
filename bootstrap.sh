@@ -54,6 +54,7 @@ mkdir -p \
     "$HOME/.local/share/fonts/NerdFonts" \
     "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
+sudo chown -R "$USER:$USER" "$HOME/.config"
 ok "User directories ready"
 
 # — Step 1: System dependencies
