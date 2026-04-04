@@ -192,6 +192,7 @@ fi
 
 # — Step 8: Configure git identity, delta, and aliases
 step "Configuring git"
+sudo chown -R "$USER:$USER" "$HOME/.config"
 if [ -z "$(git config --global user.name 2>/dev/null)" ]; then
     read -rp "  Git user.name: " GIT_NAME
     git config --global user.name "$GIT_NAME"
