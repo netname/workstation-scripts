@@ -62,7 +62,7 @@ ok "System dependencies installed"
 # — Step 1b: Set zsh as login shell
 step "Setting zsh as login shell"
 if [ "$(getent passwd "$USER" | cut -d: -f7)" != "/usr/bin/zsh" ]; then
-    chsh -s /usr/bin/zsh
+    sudo usermod -s /usr/bin/zsh "$USER"
     ok "Login shell changed to zsh (takes effect on next login)"
 else
     ok "Login shell already set to zsh – skipping"
