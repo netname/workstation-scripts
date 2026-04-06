@@ -285,7 +285,7 @@ After rebooting:
 **Install VS Code extensions:**  Open WezTerm and run:
 
 ```bash
-grep -v '^#\|^$' ~/dotfiles/vscode/extensions.txt | xargs -I{} code --install-extension {}
+jq -r '.recommendations[]' ~/dotfiles/vscode/extensions.json | xargs -I{} code --install-extension {}
 ```
 
 This installs every extension listed in your dotfiles. See §11.3 for the full list and what each extension does.
@@ -1149,7 +1149,7 @@ dotfiles/
       config/
       plugins/
   vscode/
-    extensions.txt             # VS Code recommended extensions — install manually after setup (see §11.3)
+    extensions.json            # VS Code recommended extensions — install manually after setup (see §11.3)
   scripts/
     sessionizer                # tmux project session manager script
   xfce4/
@@ -1172,7 +1172,7 @@ This repository contains your identity and preferences. Keep it private.
 
 `nvim/` starts as a placeholder directory. The bootstrap stages the LazyVim starter into it during step 13 (§2.4.3). After that, it is a mutable directory containing your Neovim/LazyVim configuration. It is symlinked to `~/.config/nvim/` via the `mkOutOfStoreSymlink` pattern in `home.nix`. Covered in Part 3.
 
-`vscode/extensions.txt` is a plain text file, one extension ID per line (comments with `#` are ignored). You install these manually after the desktop setup — see §11.3.
+`vscode/extensions.json` uses VS Code's native recommendations format. You install these manually after the desktop setup — see §11.3.
 
 `scripts/sessionizer` is the project session manager script. It is symlinked to `~/.local/bin/sessionizer` by the bootstrap and bound to `Ctrl-f` in tmux. Covered in Part 3.
 
@@ -1337,8 +1337,25 @@ touch tmux/tmux.conf
 # LazyVim entry point — staged by bootstrap in Part 2, placeholder only
 touch nvim/init.lua
 
-# VS Code extensions list — populate with extension IDs, install manually (see §11.3)
-touch vscode/extensions.txt
+# VS Code extensions list — install manually after desktop setup (see §11.3)
+cat > vscode/extensions.json << 'EOF'
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "mkhl.direnv",
+    "ms-azuretools.vscode-docker",
+    "eamodio.gitlens",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "yzhang.markdown-all-in-one",
+    "bierner.markdown-mermaid"
+  ]
+}
+EOF
 
 # Sessionizer script — covered in Part 3
 touch scripts/sessionizer
@@ -3566,7 +3583,7 @@ fc-list | grep JetBrains
 Expected output — one or more lines such as:
 
 ```
-/home/yourusername/.local/share/fonts/NerdFonts/JetBrainsMonoNerdFont-Regular.ttf: JetBrainsMono Nerd Font:style=Regular
+/home/yourusername/.local/share/fonts/JetBrainsMono/JetBrainsMonoNerdFont-Regular.ttf: JetBrainsMono Nerd Font:style=Regular
 ```
 
 If this returns nothing, the font is not registered. Re-run the font installation steps:
@@ -3576,7 +3593,7 @@ If this returns nothing, the font is not registered. Re-run the font installatio
 fc-cache -fv
 
 # If still not found, verify the files exist
-ls ~/.local/share/fonts/NerdFonts/ | grep JetBrains
+ls ~/.local/share/fonts/JetBrainsMono/ | grep JetBrains
 ```
 
 If the directory is empty, Home Manager did not install the font. Run `hms` and check for errors, or download JetBrainsMono Nerd Font manually from `nerdfonts.com`, unzip to `~/.local/share/fonts/`, and run `fc-cache -fv`.
@@ -3600,8 +3617,8 @@ curl -fLo FiraCode.zip \
 **Step 2: Install the font files**
 
 ```bash
-mkdir -p ~/.local/share/fonts/NerdFonts
-unzip /tmp/FiraCode.zip -d ~/.local/share/fonts/NerdFonts/
+mkdir -p ~/.local/share/fonts/FiraCode
+unzip /tmp/FiraCode.zip -d ~/.local/share/fonts/FiraCode/
 fc-cache -fv
 ```
 
@@ -3616,7 +3633,7 @@ fc-list | grep -i fira
 Look for the family name in the output. It will appear as the second field after the file path:
 
 ```
-/home/you/.local/share/fonts/NerdFonts/FiraCodeNerdFont-Regular.ttf: FiraCode Nerd Font:style=Regular
+/home/you/.local/share/fonts/FiraCode/FiraCodeNerdFont-Regular.ttf: FiraCode Nerd Font:style=Regular
 ```
 
 The family name here is `FiraCode Nerd Font`.
@@ -3641,7 +3658,7 @@ git commit -m "chore: switch to FiraCode Nerd Font"
 git push
 ```
 
-> [!tip] Keeping the old font installed There is no reason to remove the previous font. Both fonts coexist in `~/.local/share/fonts/NerdFonts/` without conflict. WezTerm uses whichever family name is specified in `wezterm.lua`. You can switch back by changing one line and pressing `SUPER+SHIFT+R`.
+> [!tip] Keeping the old font installed There is no reason to remove the previous font. Each font lives in its own subdirectory under `~/.local/share/fonts/` and they coexist without conflict. WezTerm uses whichever family name is specified in `wezterm.lua`. You can switch back by changing one line and pressing `SUPER+SHIFT+R`.
 
 ---
 
@@ -4377,7 +4394,7 @@ docker compose down -v && docker compose up -d
 
 Two settings are required for VS Code to use the devenv environment correctly. Both are covered in full in Part 3; this section covers only the devenv-specific parts.
 
-**`mkhl.direnv` extension** reads `.envrc` and activates the devenv environment inside VS Code's process. Without it, VS Code extensions find only the system `$PATH` and either fail to find tools or find the wrong global versions. This extension is in `vscode/extensions.txt`; install it with the rest of your extensions as described in §11.3.
+**`mkhl.direnv` extension** reads `.envrc` and activates the devenv environment inside VS Code's process. Without it, VS Code extensions find only the system `$PATH` and either fail to find tools or find the wrong global versions. This extension is in `vscode/extensions.json`; install it with the rest of your extensions as described in §11.3.
 
 **`.vscode/settings.json`** must point `python.defaultInterpreterPath` at the virtualenv created by devenv:
 
@@ -6480,23 +6497,25 @@ apt list --installed 2>/dev/null | grep code
 Extensions are not installed automatically — `code --install-extension` requires a running display and fails when called from a setup script without one. Install them manually after the desktop is up (Installation Step 6):
 
 ```bash
-grep -v '^#\|^$' ~/dotfiles/vscode/extensions.txt | xargs -I{} code --install-extension {}
+jq -r '.recommendations[]' ~/dotfiles/vscode/extensions.json | xargs -I{} code --install-extension {}
 ```
 
-Populate `~/dotfiles/vscode/extensions.txt` with the following (one extension ID per line, `#` comments are ignored):
+`~/dotfiles/vscode/extensions.json` uses VS Code's native recommendations format. The global list covers all project types — per-project `.vscode/extensions.json` files (§11.5) trim this down to only what each project needs.
 
-```
-ms-python.python            Python language support, Pylance LSP, debugger
-charliermarsh.ruff          Ruff linter and formatter (replaces separate flake8 + black extensions)
-ms-python.debugpy           Python DAP debugging adapter
-mkhl.direnv                 devenv environment activation — critical (see §11.6)
-ms-azuretools.vscode-docker Docker Compose integration, container management
-eamodio.gitlens             Enhanced git history, inline blame, PR view
-redhat.vscode-yaml          YAML with JSON schema validation
-tamasfe.even-better-toml    TOML syntax and validation
-esbenp.prettier-vscode      Prettier formatter for JS/TS/JSON/YAML/Markdown
-dbaeumer.vscode-eslint      ESLint linter integration
-```
+| Extension | Purpose |
+|---|---|
+| `ms-python.python` | Python language support, Pylance LSP, debugger |
+| `ms-python.debugpy` | Python DAP debugging adapter |
+| `charliermarsh.ruff` | Ruff linter and formatter (replaces flake8 + black) |
+| `esbenp.prettier-vscode` | Prettier formatter for JS/TS/JSON/YAML/Markdown |
+| `dbaeumer.vscode-eslint` | ESLint linter integration |
+| `mkhl.direnv` | devenv environment activation — critical (see §11.6) |
+| `ms-azuretools.vscode-docker` | Docker Compose integration, container management |
+| `eamodio.gitlens` | Enhanced git history, inline blame, PR view |
+| `redhat.vscode-yaml` | YAML with JSON schema validation |
+| `tamasfe.even-better-toml` | TOML syntax and validation |
+| `yzhang.markdown-all-in-one` | Markdown TOC, shortcuts, word count — useful for editing this guide |
+| `bierner.markdown-mermaid` | Mermaid diagram rendering in VS Code's built-in preview (`Ctrl+Shift+V`) |
 
 **How extensions replace Mason:** in Neovim, `:Mason` downloads and manages tool binaries. In VS Code, extensions either bundle the tools directly or manage them. You do not use a `:Mason`-equivalent in VS Code. The extension handles binary management internally:
 
@@ -6646,20 +6665,47 @@ This is the most important VS Code project file. Where Neovim used global `forma
 
 This file causes VS Code to prompt new contributors to install the correct extensions when they open the project. No manual installation needed:
 
+Start from the template for your project type below — include only what the project actually uses. `mkhl.direnv` belongs in every project that uses devenv.
+
+**Python project:**
+
 ```json
-// .vscode/extensions.json
-// VS Code prompts: "This workspace has extension recommendations. Install them?"
 {
   "recommendations": [
-    "charliermarsh.ruff",
     "ms-python.python",
     "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "mkhl.direnv",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml"
+  ]
+}
+```
+
+**TypeScript / JavaScript project:**
+
+```json
+{
+  "recommendations": [
     "esbenp.prettier-vscode",
     "dbaeumer.vscode-eslint",
     "mkhl.direnv",
-    "ms-azuretools.vscode-docker",
-    "redhat.vscode-yaml",
-    "tamasfe.even-better-toml"
+    "redhat.vscode-yaml"
+  ]
+}
+```
+
+> [!tip] If the project uses Biome instead of Prettier + ESLint, replace both with `"biomejs.biome"`.
+
+**Markdown / documentation project:**
+
+```json
+{
+  "recommendations": [
+    "yzhang.markdown-all-in-one",
+    "bierner.markdown-mermaid",
+    "esbenp.prettier-vscode",
+    "redhat.vscode-yaml"
   ]
 }
 ```
@@ -6718,7 +6764,7 @@ All extensions use devenv's binaries ✓
 
 **The two requirements for this to work:**
 
-1. `mkhl.direnv` is installed (bootstrap installs it via `vscode/extensions.txt`)
+1. `mkhl.direnv` is installed (bootstrap installs it via `vscode/extensions.json`)
 2. `direnv allow` has been run in the project directory (once per developer per repo)
 
 **Verification:**
@@ -6801,12 +6847,12 @@ Add the extension ID to `.vscode/extensions.json` `recommendations` array and co
 
 **Adding a new extension to your list:**
 
-Add the extension ID to `~/dotfiles/vscode/extensions.txt`, install it, then commit:
+Add the extension ID to `~/dotfiles/vscode/extensions.json`, install it, then commit:
 
 ```bash
-echo "new-publisher.new-extension" >> ~/dotfiles/vscode/extensions.txt
+# Edit the recommendations array in extensions.json, then:
 code --install-extension new-publisher.new-extension
-git -C ~/dotfiles add vscode/extensions.txt
+git -C ~/dotfiles add vscode/extensions.json
 git -C ~/dotfiles commit -m "feat: add new-extension to VS Code list"
 git -C ~/dotfiles push
 ```
@@ -6819,7 +6865,7 @@ VS Code and Neovim share the entire project layer — `.editorconfig`, `pyprojec
 
 The devenv / `$PATH` problem (§11.6) is the single most important VS Code configuration detail. Without the `mkhl.direnv` extension activating first, every other extension (`pylance`, `eslint`, the debugger) uses system binaries instead of the project's pinned versions. Verify with `which python` from the VS Code integrated terminal — it must resolve to a `/nix/store/...` path, not `/usr/bin/python`.
 
-VS Code extensions are not managed by Home Manager. After a fresh bootstrap, install them with the one-liner from `~/dotfiles/vscode/extensions.txt`. Note the command in `home.nix` as a reminder.
+VS Code extensions are not managed by Home Manager. After a fresh bootstrap, install them with the one-liner from `~/dotfiles/vscode/extensions.json`.
 
 ---
 
@@ -7865,33 +7911,25 @@ return {
 
 ## Appendix G: VS Code Extensions List
 
-Save as `vscode/extensions.txt` in your dotfiles repository. One extension ID per line. Blank lines and lines starting with `#` are skipped by the bootstrap.
+Save as `vscode/extensions.json` in your dotfiles repository. Uses VS Code's native recommendations format — install with `jq -r '.recommendations[]' ~/dotfiles/vscode/extensions.json | xargs -I{} code --install-extension {}`.
 
-```
-# Python
-ms-python.python
-ms-python.debugpy
-charliermarsh.ruff
-
-# JavaScript / TypeScript
-esbenp.prettier-vscode
-dbaeumer.vscode-eslint
-
-# devenv / Nix integration — critical for $PATH (§11.6)
-mkhl.direnv
-
-# Docker
-ms-azuretools.vscode-docker
-
-# Git
-eamodio.gitlens
-
-# Data formats
-redhat.vscode-yaml
-tamasfe.even-better-toml
-
-# Optional: Biome (if your JS/TS projects use Biome instead of Prettier + ESLint)
-# biomejs.biome
+```json
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "mkhl.direnv",
+    "ms-azuretools.vscode-docker",
+    "eamodio.gitlens",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "yzhang.markdown-all-in-one",
+    "bierner.markdown-mermaid"
+  ]
+}
 ```
 
 ---
@@ -7957,10 +7995,10 @@ fc-list | grep JetBrains
 If this returns nothing: the bootstrap font installation failed. Re-run manually:
 
 ```bash
-mkdir -p ~/.local/share/fonts/NerdFonts
+mkdir -p ~/.local/share/fonts/JetBrainsMono
 cd /tmp && curl -fLo JetBrainsMono.zip \
   https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip
-unzip JetBrainsMono.zip -d ~/.local/share/fonts/NerdFonts/
+unzip JetBrainsMono.zip -d ~/.local/share/fonts/JetBrainsMono/
 fc-cache -fv
 ```
 
@@ -8968,7 +9006,24 @@ touch scripts/sessionizer && chmod +x scripts/sessionizer
 touch nvim/init.lua
 
 # VS Code extensions list — covered in Part 11
-touch vscode/extensions.txt
+cat > vscode/extensions.json << 'EOF'
+{
+  "recommendations": [
+    "ms-python.python",
+    "ms-python.debugpy",
+    "charliermarsh.ruff",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "mkhl.direnv",
+    "ms-azuretools.vscode-docker",
+    "eamodio.gitlens",
+    "redhat.vscode-yaml",
+    "tamasfe.even-better-toml",
+    "yzhang.markdown-all-in-one",
+    "bierner.markdown-mermaid"
+  ]
+}
+EOF
 
 # .gitignore
 cat > .gitignore << 'EOF'

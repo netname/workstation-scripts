@@ -10,15 +10,15 @@
 #   3.  Polkit shutdown rule (power off / reboot from XRDP sessions)
 #   4.  Google Chrome
 #   5.  Noto fonts (glyph fallback for WezTerm — covers U+23F5 and similar)
-#   7.  WezTerm via Flatpak (terminal emulator)
-#   8.  wezterm.lua symlink (from ~/dotfiles)
-#   9.  VS Code via apt (NOT snap — snap blocks /nix/store access)
-#   10. ksnip (screenshot + annotation tool)
-#   11. Set WezTerm as XFCE default terminal + Ctrl+Alt+T shortcut
+#   6.  WezTerm via Flatpak (terminal emulator)
+#   7.  wezterm.lua symlink (from ~/dotfiles)
+#   8.  VS Code via apt (NOT snap — snap blocks /nix/store access)
+#   9.  ksnip (screenshot + annotation tool)
+#   10. Set WezTerm as XFCE default terminal + Ctrl+Alt+T shortcut
 #
 # VS Code extensions are NOT installed by this script — install them manually
 # after first login (see §11.3 of the guide):
-#   grep -v '^#\|^$' ~/dotfiles/vscode/extensions.txt | xargs -I{} code --install-extension {}
+#   jq -r '.recommendations[]' ~/dotfiles/vscode/extensions.json | xargs -I{} code --install-extension {}
 #
 # JetBrainsMono Nerd Font is installed by Home Manager (home.nix → nerd-fonts.jetbrains-mono).
 # No manual font download is required here.
@@ -179,12 +179,15 @@ xfconf-query -c xfce4-mime-helpers -p "/TerminalEmulator" \
 warn "Could not set XFCE preferred terminal via xfconf-query (safe to set manually via Settings → Preferred Applications)"
 
 # Ctrl+Alt+T keyboard shortcut → WezTerm
+# Always force-set: XFCE pre-populates this key with "exo-open --launch TerminalEmulator",
+# so --create fails (key exists) and the fallback without --create overwrites it correctly.
+# Using a single unconditional reset avoids the create/update ambiguity entirely.
+xfconf-query -c xfce4-keyboard-shortcuts \
+    -p "/commands/custom/<Primary><Alt>t" \
+    --reset 2>/dev/null
 xfconf-query -c xfce4-keyboard-shortcuts \
     -p "/commands/custom/<Primary><Alt>t" \
     --create -t string -s "wezterm start" 2>/dev/null || \
-xfconf-query -c xfce4-keyboard-shortcuts \
-    -p "/commands/custom/<Primary><Alt>t" \
-    -s "wezterm start" 2>/dev/null || \
 warn "Could not set Ctrl+Alt+T shortcut (safe to set manually via Settings → Keyboard → Application Shortcuts)"
 
 ok "WezTerm set as default terminal (Ctrl+Alt+T)"

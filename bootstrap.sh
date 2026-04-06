@@ -9,7 +9,8 @@
 #   2.  Verifies the SSH key is present and authenticated with GitHub
 #   3.  Clones your PRIVATE dotfiles repo via SSH
 #   4.  Installs Nix (Determinate Systems installer)
-#   5.  Applies Home Manager from your flake (owns git config, tmux plugins,
+#   5.  Applies Home Manager from your flake (owns git identity, delta config,
+#         git aliases, zsh, starship, direnv, fzf, tmux plugins, JetBrainsMono
 #         Nerd Font, and all CLI packages declared in home.nix)
 #   6.  Installs Docker Engine
 #   7.  Verifies GitHub CLI (installed by Home Manager; apt fallback)
@@ -221,8 +222,8 @@ else
     ok "gh not in Nix profile yet – skipping gh config"
 fi
 
-# ── Step 9: Install Gemini CLI + extensions ──────────────────────────────────
-step "Installing Gemini CLI and extensions"
+# ── Step 9: Install Gemini CLI + Conductor extension + Context7 MCP ──────────
+step "Installing Gemini CLI, Conductor extension, and Context7 MCP"
 if ! command -v gemini &>/dev/null; then
     NPM_BIN="${HOME}/.nix-profile/bin/npm"
     if [ -x "$NPM_BIN" ]; then
