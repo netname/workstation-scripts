@@ -139,6 +139,7 @@ wget -O bootstrap.sh https://raw.githubusercontent.com/yourusername/workstation-
 chmod +x bootstrap.sh
 ./bootstrap.sh
 ```
+> [!note] **Make sure to edit bootstrap.sh before running it**. Put the correct values for `GITHUB_USER` and `DOTFILES_REPO`
 
 The bootstrap runs fully automatically with no prompts. It installs:
 
