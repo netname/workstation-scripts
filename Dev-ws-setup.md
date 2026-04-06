@@ -1232,6 +1232,8 @@ git@github.com:yourusername/dotfiles.git
 
 #### Step 2: Clone Both Repositories Locally
 
+Use `git clone` with the SSH URL directly — **not** `gh repo clone`. `gh repo clone` defaults to HTTPS, which requires token authentication on every push. The SSH URL ensures your registered key is used instead.
+
 ```bash
 cd ~
 # Clone the private dotfiles repo — this is where your config lives
@@ -1242,6 +1244,13 @@ git clone git@github.com:yourusername/workstation-scripts.git
 
 cd dotfiles
 ```
+
+> [!tip] If you already cloned with `gh repo clone` and are being prompted for a username, switch the remote to SSH:
+> ```bash
+> git -C ~/dotfiles remote set-url origin git@github.com:yourusername/dotfiles.git
+> git -C ~/workstation-scripts remote set-url origin git@github.com:yourusername/workstation-scripts.git
+> ```
+> To prevent this happening again: `gh config set git_protocol ssh`
 
 Verify both clones succeeded:
 

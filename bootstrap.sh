@@ -205,14 +205,20 @@ ok "GitHub CLI available"
 # ── Step 8: Configure gh pager ───────────────────────────────────────────────
 # git pager (delta) is managed by Home Manager via programs.git.settings.
 # The gh pager is a separate setting not exposed by Home Manager – set it here.
-step "Configuring gh pager"
+step "Configuring gh (pager + git protocol)"
 GH_BIN="${HOME}/.nix-profile/bin/gh"
 DELTA_BIN="${HOME}/.nix-profile/bin/delta"
-if [ -x "$GH_BIN" ] && [ -x "$DELTA_BIN" ]; then
-    "$GH_BIN" config set pager "$DELTA_BIN" 2>/dev/null || true
-    ok "gh pager set to delta"
+if [ -x "$GH_BIN" ]; then
+    # Always use SSH so 'gh repo clone' produces SSH remotes (not HTTPS).
+    # HTTPS remotes prompt for token credentials on every push.
+    "$GH_BIN" config set git_protocol ssh 2>/dev/null || true
+    ok "gh git_protocol set to ssh"
+    if [ -x "$DELTA_BIN" ]; then
+        "$GH_BIN" config set pager "$DELTA_BIN" 2>/dev/null || true
+        ok "gh pager set to delta"
+    fi
 else
-    ok "gh or delta not in Nix profile yet – skipping gh pager config"
+    ok "gh not in Nix profile yet – skipping gh config"
 fi
 
 # ── Step 9: Install Gemini CLI + extensions ──────────────────────────────────
