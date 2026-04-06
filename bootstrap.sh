@@ -2,7 +2,7 @@
 # bootstrap.sh
 # Idempotent workstation setup script.
 # Lives in: workstation-scripts/ (PUBLIC repo) – fetched via curl
-# Run with: wget -qO bootstrap.sh https://raw.githubusercontent.com/netname/workstation-scripts/main/bootstrap.sh && bash bootstrap.sh
+# Run with: wget -qO bootstrap.sh https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh && bash bootstrap.sh
 #
 # What this script does (headless-safe — no display required):
 #   1.  Installs system dependencies and sets zsh as the login shell
@@ -46,8 +46,9 @@ warn()  { echo -e "${YELLOW}⚠ $1${NC}"; }
 ok()    { echo -e "${GREEN}✓ $1${NC}"; }
 
 # ── Variables ─────────────────────────────────────────────────────────────────
-GITHUB_USER="netname"
-DOTFILES_REPO="git@github.com:netname/dotfiles.git"
+# !! EDIT THESE two lines to your GitHub username before running !!
+GITHUB_USER="yourusername"
+DOTFILES_REPO="git@github.com:yourusername/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
 
 echo -e "${GREEN}🚀 Starting workstation bootstrap...${NC}"
@@ -148,9 +149,20 @@ nix run github:nix-community/home-manager -- \
     switch --flake "$DOTFILES_DIR#${GITHUB_USER}"
 ok "Home Manager applied"
 
+# Verify that Home Manager actually succeeded by checking for a key binary.
+if ! command -v zsh &>/dev/null && [ ! -x "$HOME/.nix-profile/bin/zsh" ]; then
+    warn "zsh not found after Home Manager apply – HM may have failed"
+    warn "Re-run manually: nix run github:nix-community/home-manager -- switch --flake $DOTFILES_DIR#${GITHUB_USER}"
+fi
+
 # Source the new profile so subsequent steps find HM-installed binaries.
 # shellcheck disable=SC1090
-. "$HOME/.nix-profile/etc/profile.d/nix.sh" 2>/dev/null || true
+if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+    . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+else
+    warn "Nix profile script not found – HM-installed binaries may not be on PATH"
+    warn "Expected: $HOME/.nix-profile/etc/profile.d/nix.sh"
+fi
 
 # ── Step 6: Install Docker Engine ────────────────────────────────────────────
 step "Installing Docker Engine"
@@ -213,8 +225,16 @@ if ! command -v gemini &>/dev/null; then
         "$NPM_BIN" install -g --prefix "$NPM_PREFIX" @google/gemini-cli
         export PATH="$NPM_PREFIX/bin:$PATH"
         if command -v gemini &>/dev/null; then
-            gemini extension install conductor || true
-            gemini mcp install context7 || true
+            if gemini extension install conductor; then
+                ok "Gemini Conductor extension installed"
+            else
+                warn "Gemini Conductor extension install failed – install manually later"
+            fi
+            if gemini mcp install context7; then
+                ok "Gemini Context7 MCP installed"
+            else
+                warn "Gemini Context7 MCP install failed – install manually later"
+            fi
         fi
         ok "Gemini CLI installed"
     else
@@ -233,8 +253,12 @@ step "Symlinking user-managed dotfiles"
 if [ -f "$DOTFILES_DIR/scripts/sessionizer" ]; then
     chmod +x "$DOTFILES_DIR/scripts/sessionizer"
     ln -sf "$DOTFILES_DIR/scripts/sessionizer" "$HOME/.local/bin/sessionizer"
+    ok "sessionizer symlinked to ~/.local/bin/sessionizer"
+else
+    warn "scripts/sessionizer not found in dotfiles – symlink skipped"
+    warn "Add scripts/sessionizer to your dotfiles repo and re-run bootstrap, or symlink manually"
 fi
-ok "Dotfiles symlinked (sessionizer; tmux managed by HM, wezterm by setup-desktop.sh)"
+ok "Dotfile symlinks complete (tmux managed by HM, wezterm by setup-desktop.sh)"
 
 # ── Step 11: Stage LazyVim starter into dotfiles ─────────────────────────────
 step "Staging LazyVim starter"
@@ -253,8 +277,14 @@ fi
 step "Running LazyVim headless plugin sync"
 NVIM_BIN="${HOME}/.nix-profile/bin/nvim"
 if [ -x "$NVIM_BIN" ]; then
-    "$NVIM_BIN" --headless "+Lazy! sync" +qa 2>/dev/null || true
-    ok "LazyVim plugins synced headlessly"
+    LAZY_LOG="$(mktemp /tmp/lazyvim-sync.XXXXXX.log)"
+    if timeout 300 "$NVIM_BIN" --headless "+Lazy! sync" +qa >"$LAZY_LOG" 2>&1; then
+        ok "LazyVim plugins synced headlessly"
+    else
+        warn "LazyVim headless sync exited non-zero or timed out after 300s"
+        warn "Log saved to: $LAZY_LOG"
+        warn "Run ':Lazy sync' manually on first Neovim open"
+    fi
 else
     warn "Neovim not found in Nix profile – skipping headless sync"
     warn "Run ':Lazy sync' manually on first Neovim open"
@@ -266,13 +296,14 @@ echo -e "${GREEN}✔ Bootstrap complete!${NC}"
 echo ""
 echo -e "${YELLOW}Manual steps required before first use:${NC}"
 echo "  1. Log out and back in (activates Docker group membership and zsh)"
-echo "  2. gh auth login   (requires browser OAuth)"
-echo "  3. gemini auth login (requires browser OAuth)"
+echo "  2. gh auth login     (device flow — prints a code; open the URL on any browser)"
+echo "  3. gemini auth login (device flow — prints a code; open the URL on any browser)"
 echo "  4. Verify SSH remote: cd ~/dotfiles && git remote -v"
 echo "     (should show: git@github.com:${GITHUB_USER}/dotfiles.git)"
 echo ""
 echo "To add a graphical desktop (XFCE4 + XRDP + WezTerm + VS Code):"
-echo "  bash <(wget -qO- https://raw.githubusercontent.com/${GITHUB_USER}/workstation-scripts/main/setup-desktop.sh)"
+echo "  wget -O setup-desktop.sh https://raw.githubusercontent.com/${GITHUB_USER}/workstation-scripts/main/setup-desktop.sh"
+echo "  chmod +x setup-desktop.sh && ./setup-desktop.sh"
 echo ""
 echo "Back up your SSH private key to a secure location:"
 echo "  ~/.ssh/id_ed25519  (cannot be regenerated from dotfiles)"

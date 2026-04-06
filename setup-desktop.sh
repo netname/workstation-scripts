@@ -10,12 +10,15 @@
 #   3.  Polkit shutdown rule (power off / reboot from XRDP sessions)
 #   4.  Google Chrome
 #   5.  Noto fonts (glyph fallback for WezTerm — covers U+23F5 and similar)
-#   6.  WezTerm via Flatpak (terminal emulator)
-#   7.  wezterm.lua symlink (from ~/dotfiles)
-#   8.  VS Code via apt (NOT snap — snap blocks /nix/store access)
-#   9.  VS Code extensions (from ~/dotfiles/vscode/extensions.txt)
+#   7.  WezTerm via Flatpak (terminal emulator)
+#   8.  wezterm.lua symlink (from ~/dotfiles)
+#   9.  VS Code via apt (NOT snap — snap blocks /nix/store access)
 #   10. ksnip (screenshot + annotation tool)
 #   11. Set WezTerm as XFCE default terminal + Ctrl+Alt+T shortcut
+#
+# VS Code extensions are NOT installed by this script — install them manually
+# after first login (see §11.3 of the guide):
+#   grep -v '^#\|^$' ~/dotfiles/vscode/extensions.txt | xargs -I{} code --install-extension {}
 #
 # JetBrainsMono Nerd Font is installed by Home Manager (home.nix → nerd-fonts.jetbrains-mono).
 # No manual font download is required here.
@@ -28,7 +31,8 @@ step() { echo -e "${GREEN}▶ $1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
 
-GITHUB_USER="netname"
+# !! EDIT THIS to your GitHub username before running !!
+GITHUB_USER="yourusername"
 DOTFILES_DIR="$HOME/dotfiles"
 
 # ── 1. XFCE4 ─────────────────────────────────────────────────────────────────
@@ -101,7 +105,7 @@ sudo apt-get install -y fonts-noto fonts-noto-core
 fc-cache -fv >/dev/null 2>&1
 ok "Noto fonts installed"
 
-# ── 6. WezTerm via Flatpak ────────────────────────────────────────────────────
+# ── 7. WezTerm via Flatpak ────────────────────────────────────────────────────
 step "Installing WezTerm"
 sudo apt-get install -y flatpak xdg-desktop-portal-gtk
 if ! command -v wezterm &>/dev/null && ! flatpak list --user 2>/dev/null | grep -q wezterm; then
@@ -116,7 +120,7 @@ else
     ok "WezTerm already installed – skipping"
 fi
 
-# ── 7. wezterm.lua symlink ────────────────────────────────────────────────────
+# ── 8. wezterm.lua symlink ────────────────────────────────────────────────────
 step "Symlinking wezterm.lua"
 mkdir -p "$HOME/.config/wezterm"
 if [ -f "$DOTFILES_DIR/wezterm/wezterm.lua" ]; then
@@ -126,7 +130,7 @@ else
     warn "~/dotfiles/wezterm/wezterm.lua not found – skipping symlink"
 fi
 
-# ── 8. VS Code ───────────────────────────────────────────────────────────────
+# ── 9. VS Code ───────────────────────────────────────────────────────────────
 # apt repository – NOT snap (snap sandboxing blocks /nix/store access,
 # breaking the mkhl.direnv extension and devenv PATH resolution).
 step "Installing VS Code"
@@ -145,20 +149,7 @@ else
     ok "VS Code already installed – skipping"
 fi
 
-step "Installing VS Code extensions"
-EXTENSIONS_FILE="$DOTFILES_DIR/vscode/extensions.txt"
-if [ -f "$EXTENSIONS_FILE" ] && command -v code &>/dev/null; then
-    while IFS= read -r ext || [ -n "$ext" ]; do
-        [[ -z "$ext" || "$ext" == \#* ]] && continue
-        code --install-extension "$ext" --force >/dev/null 2>&1 || \
-            warn "Failed to install extension: $ext"
-    done < "$EXTENSIONS_FILE"
-    ok "VS Code extensions installed"
-else
-    warn "vscode/extensions.txt not found or code not on PATH – skipping extensions"
-fi
-
-# ── 9. ksnip ─────────────────────────────────────────────────────────────────
+# ── 10. ksnip ────────────────────────────────────────────────────────────────
 step "Installing ksnip"
 if ! command -v ksnip &>/dev/null; then
     sudo apt-get install -y ksnip
@@ -167,7 +158,7 @@ else
     ok "ksnip already installed – skipping"
 fi
 
-# ── 10. Set WezTerm as default terminal ──────────────────────────────────────
+# ── 11. Set WezTerm as default terminal ─────────────────────────────────────
 # xfconf-query sets XFCE4 configuration values without opening the GUI.
 # These take effect immediately for new sessions; no reboot required for this step.
 step "Configuring WezTerm as default terminal"

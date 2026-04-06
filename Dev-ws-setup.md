@@ -50,7 +50,7 @@ Step 3 — SSH key registered:
   wget → workstation-scripts/bootstrap.sh    (runs the full bootstrap, fully unattended)
   bootstrap verifies SSH key → exits with instructions if missing
   bootstrap clones your PRIVATE dotfiles repo via SSH
-  home-manager switch builds your environment
+  hms builds your environment
 ```
 
 `wget` only ever touches the public repository — it never needs credentials. The private dotfiles repository is only reached after the SSH key is registered, so it stays private throughout.
@@ -133,7 +133,9 @@ If authentication fails, confirm the key is saved at [github.com/settings/keys](
 **Step 3 — Run the bootstrap** (~20–40 minutes, unattended)
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh | bash
+wget -O bootstrap.sh https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh
+chmod +x bootstrap.sh
+./bootstrap.sh
 ```
 
 The bootstrap runs fully automatically with no prompts. It installs:
@@ -156,12 +158,14 @@ Git identity (`user.name`, `user.email`) is declared in `home.nix` and applied b
 
 **Step 4 — Complete post-bootstrap steps** (~5 minutes)
 
-Log out and back in to activate Docker group membership, then authenticate the CLI tools that require browser OAuth:
+Log out and back in to activate Docker group membership, then authenticate the CLI tools:
 
 ```bash
-gh auth login        # GitHub CLI — opens browser for OAuth
-gemini auth login    # Gemini CLI — opens browser for OAuth
+gh auth login        # prints a one-time code + URL — open the URL on any device
+gemini auth login    # prints a one-time code + URL — open the URL on any device
 ```
+
+> [!note] **No browser needed on this machine.** Both CLIs use a device flow: they print a short code and a URL (e.g. `github.com/login/device`). Open that URL on any phone, laptop, or other machine, enter the code, and authentication completes on the headless machine.
 
 Back up your SSH private key to a secure location — it cannot be recovered from the dotfiles repository:
 
@@ -179,7 +183,9 @@ Back up your SSH private key to a secure location — it cannot be recovered fro
 > [!important] **Complete Steps 1–4 before running this.** The bootstrap must succeed first.
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-desktop.sh | bash
+wget -O setup-desktop.sh https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-desktop.sh
+chmod +x setup-desktop.sh
+./setup-desktop.sh
 ```
 
 This script installs:
@@ -218,6 +224,14 @@ After rebooting:
 
 **Verify WezTerm opens:**  Press `Ctrl+Alt+T` — WezTerm should open and launch tmux automatically (tmux `new-session -A -s main` is set in `wezterm.lua`).
 
+**Install VS Code extensions:**  Open WezTerm and run:
+
+```bash
+grep -v '^#\|^$' ~/dotfiles/vscode/extensions.txt | xargs -I{} code --install-extension {}
+```
+
+This installs every extension listed in your dotfiles. See §11.3 for the full list and what each extension does.
+
 **Multi-monitor setup** — see §L.2 for span mode and dual-monitor options.
 
 **Window tiling shortcuts** — see §L.3 for the xfwm4 keyboard shortcut setup (`Super+Arrow` for halves, `Super+Ctrl+Arrow` for quarters).
@@ -250,6 +264,22 @@ Appendix L  →  desktop connection details and tiling shortcuts (reference)
 | `setup-desktop.sh` | `workstation-scripts` (public) | Display layer + GUI apps (XFCE4, XRDP, WezTerm, VS Code, Chrome, ksnip) | After bootstrap, desktop path only |
 
 > [!note] Sections that provide a script you can run instead of following manual steps are marked with a **📋 Script available** callout at the top. You can always follow the manual steps to understand what the script does, or run the script directly and refer back to the manual steps if something goes wrong.
+
+---
+
+### How to Read This Guide
+
+Different readers need different things. Use this table to calibrate how much of Part 1 to read before starting the bootstrap.
+
+| If you… | Do this |
+|---|---|
+| Are new to Nix and declarative environments | Read all of Part 1 before or during the bootstrap. The 20–40 minute bootstrap window fits it neatly. |
+| Use NixOS or Home Manager already | Skim §1.5 (dotfile boundary) and §1.9 (evolution reference table). The rest of Part 1 is review. |
+| Are re-installing a second machine from an existing dotfiles repo | Go straight to the Installation steps. Return to Parts 3–11 only if you want to tune the configuration. |
+| Are an experienced Linux dev, new to Nix | Read §1.1–1.5 for the mental model, skim §1.6–1.10, then start the bootstrap. |
+
+> [!tip] **When to read each section during the bootstrap**
+> Steps 1–2 take under 5 minutes — use that time to read §1.1–1.3. Bootstrap Step 5 (Home Manager apply) takes most of the 20–40 minutes; that window is the right time to read §1.4–1.9 in depth.
 
 ---
 
@@ -358,6 +388,17 @@ You will rarely interact with `/nix/store` directly. What matters is understandi
 
 > [!tip] Why this matters for you day-to-day When your colleague says "can you reproduce the bug I'm seeing?", the answer is yes — not because you trust that your machines are similar, but because your `devenv.lock` file records the exact Nix store hash for every tool in the project environment. Same hash = same binary = reproducible behavior.
 
+> [!tip] **Common confusion: "which Python is the system Python?"**
+> If you find yourself asking this, that is the right question — and the answer is: *there isn't one*. Nix does not replace or shadow a system Python. Each environment specifies the exact Python version it uses. `python3` in your global shell is the one declared in `home.nix`. `python3` inside a Devenv project is the one declared in `devenv.nix`. They are different binaries at different `/nix/store` paths and neither affects the other.
+
+> [!tip] **Try it once the bootstrap completes**
+> ```bash
+> which git                     # /home/you/.nix-profile/bin/git — not /usr/bin/git
+> readlink $(which git)         # resolves to a /nix/store/... path
+> ls /nix/store | wc -l        # hundreds of store paths; each hash = a unique build
+> ```
+> The store path encodes the exact build inputs. Same hash on your machine = same binary as your colleague's.
+
 ---
 
 ### 1.4 Home Manager: Your Declarative User Environment
@@ -381,7 +422,7 @@ All of this is declared in a single file: `home.nix`.
 ```
 You edit home.nix
          ↓
-home-manager switch
+hms
          ↓
 Nix evaluates the expression
          ↓
@@ -394,7 +435,7 @@ Creates symlinks: ~/.zshrc → /nix/store/.../generated-zshrc
 Creates a new "generation" — a snapshot of this exact state
 ```
 
-The generation system is the rollback mechanism. Every `home-manager switch` creates a new generation. If something breaks:
+The generation system is the rollback mechanism. Every `hms` creates a new generation. If something breaks:
 
 ```bash
 # See all generations — output includes the /nix/store path for each
@@ -405,7 +446,7 @@ home-manager generations
 /nix/store/rjzjszmwfrhmwzvqxhgy4l2a4rrr2xma-home-manager-generation/activate
 ```
 
-> [!warning] Never edit `~/.zshrc` directly Home Manager generates `~/.zshrc` from templates in `home.nix`. Any edit you make to `~/.zshrc` directly will be silently overwritten the next time you run `home-manager switch`. All shell configuration goes in `home.nix`. This is not a limitation — it is what makes rollback work.
+> [!warning] Never edit `~/.zshrc` directly Home Manager generates `~/.zshrc` from templates in `home.nix`. Any edit you make to `~/.zshrc` directly will be silently overwritten the next time you run `hms`. All shell configuration goes in `home.nix`. This is not a limitation — it is what makes rollback work.
 
 #### How to Evolve This Layer
 
@@ -422,27 +463,27 @@ home.packages = with pkgs; [
 Then apply the change:
 
 ```bash
-home-manager switch
+hms
 ```
 
-**What `home-manager switch` actually does.** When you run this command, Home Manager evaluates the Nix expression in `home.nix`, resolves every declared package to its exact path in `/nix/store`, downloads any packages that are not already cached, regenerates managed config files like `~/.zshrc` (from the templates you have declared in `home.nix`), creates symlinks from those generated files into your home directory, and finally records a new _generation_ — a snapshot of the complete resulting state. The old generation remains intact and reachable for rollback. The switch itself is atomic: either the entire new generation is activated, or the old one stays active. There is no partial state.
+**What `hms` actually does.** When you run this command, Home Manager evaluates the Nix expression in `home.nix`, resolves every declared package to its exact path in `/nix/store`, downloads any packages that are not already cached, regenerates managed config files like `~/.zshrc` (from the templates you have declared in `home.nix`), creates symlinks from those generated files into your home directory, and finally records a new _generation_ — a snapshot of the complete resulting state. The old generation remains intact and reachable for rollback. The switch itself is atomic: either the entire new generation is activated, or the old one stays active. There is no partial state.
 
 **Updating all packages to their latest Nix versions:**
 
 ```bash
 # In your dotfiles directory:
 nix flake update
-home-manager switch
+hms
 ```
 
 **What `nix flake update` does — and why it is a separate step.** Your `flake.nix` declares _which_ nixpkgs channel to use (for example, `github:nixos/nixpkgs/nixos-unstable`). But `flake.lock` records the exact Git commit hash of that channel that was used the last time you updated. This is what makes your environment reproducible: two machines with the same `flake.lock` get the exact same package versions, even if the channel has moved forward since you last updated.
 
-`nix flake update` fetches the current commit hash of the nixpkgs channel and writes it into `flake.lock`. After this, `home-manager switch` rebuilds your environment using the newly pinned commit — meaning every package in `home.nix` is resolved against the updated nixpkgs tree and newer versions are downloaded and installed.
+`nix flake update` fetches the current commit hash of the nixpkgs channel and writes it into `flake.lock`. After this, `hms` rebuilds your environment using the newly pinned commit — meaning every package in `home.nix` is resolved against the updated nixpkgs tree and newer versions are downloaded and installed.
 
-This is deliberately a two-step operation. If `nix flake update` automatically applied the changes, you would have no opportunity to review what changed before activating it. Keeping them separate means you can run `nix flake update` to pull the new lockfile, inspect the diff, and only then run `home-manager switch` to apply.
+This is deliberately a two-step operation. If `nix flake update` automatically applied the changes, you would have no opportunity to review what changed before activating it. Keeping them separate means you can run `nix flake update` to pull the new lockfile, inspect the diff, and only then run `hms` to apply.
 
 > [!important] Commit `flake.lock` after updating
-> After `nix flake update && home-manager switch`, commit the updated `flake.lock` to your dotfiles repository. This records which version of nixpkgs your current environment is built from, and ensures a second machine running the bootstrap gets the same package versions — not whatever happens to be current at the time of that bootstrap.
+> After `nix flake update && hms`, commit the updated `flake.lock` to your dotfiles repository. This records which version of nixpkgs your current environment is built from, and ensures a second machine running the bootstrap gets the same package versions — not whatever happens to be current at the time of that bootstrap.
 
 **Rolling back if something breaks:**
 
@@ -453,6 +494,18 @@ home-manager generations
 ```
 
 Rollback activates the previous generation by re-running its stored activation script. Because each generation is a complete self-contained snapshot in `/nix/store`, the rollback does not require re-downloading anything — it is instantaneous. The packages, generated config files, and symlinks from the previous generation are all already on disk.
+
+> [!tip] **Common confusion: `flake.nix` vs `flake.lock` vs `home.nix`**
+> These are three different files with three different jobs. `flake.nix` declares *which* nixpkgs channel to track (e.g. `nixos-unstable`). `flake.lock` records the exact Git commit of that channel currently in use — this is what makes builds reproducible across machines. `home.nix` declares *what to install* from that pinned channel. The mental model: `flake.nix` says "watch this channel," `flake.lock` says "use this exact snapshot of it," `home.nix` says "give me these packages from that snapshot."
+
+> [!tip] **Try it once the bootstrap completes**
+> ```bash
+> home-manager generations           # see your full generation history
+> ls -la ~/.zshrc                     # it is a symlink, not a regular file
+> readlink ~/.zshrc                   # resolves to /nix/store/.../zshrc
+> head -3 ~/.zshrc                    # first line: "# Generated by Home Manager. Do not edit."
+> ```
+> The symlink and the "do not edit" header are the generation system made visible. Every `hms` creates a new entry in `home-manager generations` and repoints these symlinks atomically.
 
 ---
 
@@ -513,7 +566,7 @@ nvim ~/dotfiles/home.nix
 # 2. Apply — Nix evaluates home.nix, rebuilds the relevant outputs,
 #    regenerates ~/.zshrc (and other managed files), updates symlinks,
 #    and records a new generation.
-home-manager switch
+hms
 
 # 3. Verify in a new shell (the current shell has the old .zshrc in memory)
 exec zsh   # or open a new terminal
@@ -525,7 +578,7 @@ git commit -m "describe what changed"
 git push
 ```
 
-Note that step 3 requires a new shell for shell-config changes: `home-manager switch` writes the new `~/.zshrc`, but the shell you are currently running has already loaded the old one into memory. Opening a new terminal (or running `exec zsh`) picks up the regenerated file.
+Note that step 3 requires a new shell for shell-config changes: `hms` writes the new `~/.zshrc`, but the shell you are currently running has already loaded the old one into memory. Opening a new terminal (or running `exec zsh`) picks up the regenerated file.
 
 **Path B — Changing something you manage directly (WezTerm, tmux, sessionizer):**
 
@@ -557,13 +610,13 @@ The table below maps common changes to the correct path:
 
 |What you want to change|Where to make the change|How to apply|
 |---|---|---|
-|Add a global CLI tool|`home.nix` packages list|`home-manager switch`|
-|Change shell prompt appearance|`home.nix` programs.starship|`home-manager switch`|
-|Change git aliases|`home.nix` programs.git|`home-manager switch`|
+|Add a global CLI tool|`home.nix` packages list|`hms`|
+|Change shell prompt appearance|`home.nix` programs.starship|`hms`|
+|Change git aliases|`home.nix` programs.git|`hms`|
 |Change terminal font or colors|`~/dotfiles/wezterm/wezterm.lua`|`SUPER+SHIFT+R`|
 |Change tmux prefix or keybindings|`~/dotfiles/tmux/tmux.conf`|`prefix r`|
-|Add a tmux plugin|`home.nix` `programs.tmux.plugins` list|`home-manager switch`|
-|Update all Nix packages|`nix flake update` in dotfiles repo|`home-manager switch`|
+|Add a tmux plugin|`home.nix` `programs.tmux.plugins` list|`hms`|
+|Update all Nix packages|`nix flake update` in dotfiles repo|`hms`|
 
 ---
 
@@ -624,6 +677,9 @@ direnv allow
 This stores a hash of the `.envrc` file. If the file changes (e.g., a teammate updates it), Direnv blocks it again and you must re-run `direnv allow` after reviewing the change.
 
 > [!warning] `direnv allow` must be run once per developer per repository This is intentional security behavior. An `.envrc` file could execute arbitrary shell code. Direnv requires explicit approval before running it. Always review the `.envrc` contents before approving — `cat .envrc` first.
+
+> [!tip] **Common confusion: "direnv works in the terminal but not in Neovim or VS Code"**
+> The editor was launched from a context where the direnv hook did not run, or it was opened before `cd`-ing into the project directory. Direnv only activates when a shell with the `eval "$(direnv hook zsh)"` hook changes directory. Editors need their own integration: Neovim uses the `mkhl/direnv.nvim` plugin; VS Code uses the `mkhl.direnv` extension. Both are configured in this stack. If an LSP cannot find a project tool (pyright, ruff, typescript-language-server), the most likely cause is that the editor's shell did not inherit the Devenv `$PATH`. §8.5 covers the full `$PATH` propagation chain.
 
 ---
 
@@ -761,26 +817,28 @@ docker compose down -v
 
 ---
 
-### 1.9 How to Evolve Each Layer
+### 1.9 How to Evolve Each Layer — [Reference]
+
+> [!note] **This is a reference section.** Read it once now to build the mental model of where changes belong. Then bookmark it — after initial setup, this table answers the majority of day-to-day "where do I make this change?" questions without needing to re-read any other section.
 
 This is the reference you will reach for after initial setup. Every question a developer asks after the bootstrap is complete maps to exactly one answer here.
 
 |What you want to do|Where|Command|
 |---|---|---|
-|Add a new global CLI tool|`home.nix` packages list|`home-manager switch`|
+|Add a new global CLI tool|`home.nix` packages list|`hms`|
 |Add a new project runtime or tool|`devenv.nix` packages|Save the file; Direnv re-activates|
 |Change Python version for a project (v15)|`devenv.nix` `languages.python.version`|`devenv update`|
 |Change Python version for a project (v16)|`uv python install <version>` — no `languages.python` block exists|See §3.4|
-|Change shell prompt appearance|`home.nix` `programs.starship`|`home-manager switch`|
+|Change shell prompt appearance|`home.nix` `programs.starship`|`hms`|
 |Change terminal font, colors, or padding|`~/dotfiles/wezterm/wezterm.lua`|`SUPER+SHIFT+R`|
 |Change tmux prefix key or keybindings|`~/dotfiles/tmux/tmux.conf`|`prefix r`|
-|Add a tmux plugin|`home.nix` `programs.tmux.plugins` list|`home-manager switch`|
+|Add a tmux plugin|`home.nix` `programs.tmux.plugins` list|`hms`|
 |Add a new stateful service (database, queue)|`docker-compose.yml`|`docker compose up -d`|
-|Update all Nix packages globally|`nix flake update` in dotfiles repo|`home-manager switch`|
+|Update all Nix packages globally|`nix flake update` in dotfiles repo|`hms`|
 |Update all Nix packages for a project|`devenv update` in project root|Direnv re-activates|
 |Roll back a Home Manager change|`home-manager generations`; copy the store path|`/nix/store/<hash>-home-manager-generation/activate`|
 |Roll back a Devenv change|`git checkout devenv.nix devenv.lock`|`devenv update`|
-|Add a new shell function or alias|`home.nix` `programs.zsh.initContent`|`home-manager switch`|
+|Add a new shell function or alias|`home.nix` `programs.zsh.initContent`|`hms`|
 |Add a project environment variable|`devenv.nix` `env` block|Save the file; Direnv re-activates|
 
 > [!tip] The decision rule If the change is personal (affects you across all projects), it belongs in `home.nix`. If the change is project-specific (affects everyone who works on this project), it belongs in `devenv.nix` or `docker-compose.yml`. If it is a personal tool with instant-reload needs, it is a user-managed dotfile.
@@ -874,7 +932,7 @@ Every change to this environment — adding a tool, changing a setting, fixing a
 
 ```
 1. Edit    → modify the relevant file in ~/dotfiles/
-2. Apply   → run the activation command (home-manager switch, SUPER+SHIFT+R, prefix r…)
+2. Apply   → run the activation command (hms, SUPER+SHIFT+R, prefix r…)
 3. Verify  → confirm the change works
 4. Commit  → git add, commit, push — make it part of the record
 ```
@@ -882,6 +940,38 @@ Every change to this environment — adding a tool, changing a setting, fixing a
 Step 4 is never optional. A change that is not committed exists only on this machine.
 
 > [!tip] **The one debugging question** When anything breaks or is missing, ask: *which layer owns this?* Find the layer in the table above, then go to that layer's section. Ninety percent of environment problems resolve in under a minute with this question.
+
+---
+
+### Glossary
+
+Key terms used throughout this guide. Each entry links to the section where it is explained in depth.
+
+**Activation** — The process of switching to a new Home Manager generation (`hms`) or entering a Devenv environment (via Direnv on `cd`). Activation updates symlinks, modifies `$PATH`, and runs shell hooks. See §1.4, §1.6.
+
+**Derivation** — A Nix build instruction: a description of inputs (source, dependencies, build flags) that produces a deterministic output in `/nix/store`. Every Nix-managed package is the result of evaluating a derivation.
+
+**Devenv** — A tool that builds per-project development environments on top of Nix. Declared in `devenv.nix`; activated automatically by Direnv when you `cd` into the project. See §1.7, Part 8.
+
+**Direnv** — A shell extension that loads and unloads environment variables automatically when you `cd` into or out of a directory containing an `.envrc` file. The trigger mechanism that makes per-project environments invisible. See §1.6.
+
+**Flake** — A Nix project structure that declares its inputs and outputs in `flake.nix`. Used here for Home Manager (`~/dotfiles/flake.nix`) and Devenv projects. Flakes make builds reproducible via `flake.lock`.
+
+**`flake.lock`** — The lock file that records the exact Git commit hash of every flake input (e.g., which commit of nixpkgs is in use). Always commit this file. Same lock = same package versions on every machine.
+
+**GC root** — A pointer registered with Nix that marks a store path as still in use. Nix garbage collection will not delete store paths reachable from a GC root. Each Home Manager generation is a GC root; `nix-collect-garbage` (without `-d`) respects them. See §1.3.
+
+**Generation** — A complete, immutable snapshot of a Home Manager environment state stored in `/nix/store`. Every `hms` creates a new generation. Activating an old generation's script rolls back instantly without re-downloading anything. See §1.4.
+
+**`hms`** — Shell alias for `home-manager switch --flake ~/dotfiles#yourusername`. The command that applies `home.nix` changes. Defined in `home.nix` `programs.zsh.shellAliases`.
+
+**Home Manager** — A Nix-based tool that manages your user environment declaratively: shell, global CLI tools, git config, and stable dotfiles. Configured in `home.nix`. See §1.4.
+
+**`home.nix`** — The file where your global user environment is declared. Lives in your private `dotfiles` repository.
+
+**Store path** — A path under `/nix/store/` of the form `/nix/store/<hash>-<name>/`. Nix-managed packages, generated config files, and Home Manager generations all live here. Store paths are immutable once created.
+
+**User-managed dotfile** — A config file (`wezterm.lua`, `tmux.conf`, `sessionizer`) stored in `~/dotfiles/` and symlinked directly into place, bypassing the Nix build step entirely. Changes reload in under a second. Contrasted with Home Manager-managed files. See §1.5.
 
 ---
 
@@ -1001,7 +1091,7 @@ dotfiles/
       config/
       plugins/
   vscode/
-    extensions.txt             # VS Code extensions list — bootstrap installs these
+    extensions.txt             # VS Code recommended extensions — install manually after setup (see §11.3)
   scripts/
     sessionizer                # tmux project session manager script
   xfce4/
@@ -1012,7 +1102,7 @@ This repository contains your identity and preferences. Keep it private.
 
 **What each file is for:**
 
-`flake.nix` is the entry point for the Nix build. It does two things: it declares _inputs_ (which version of nixpkgs and Home Manager to use), and it declares _outputs_ (your Home Manager configuration, identified by your username). When you run `home-manager switch --flake ~/dotfiles#yourusername`, Nix reads this file to know which version of Home Manager to use, which version of nixpkgs to resolve packages from, and which configuration to apply (the one identified by `yourusername`). The `flake.lock` file that accompanies it records the exact Git commit hashes for all declared inputs — this is what makes two machines with the same `flake.lock` produce identical environments. Full reference in Appendix B.
+`flake.nix` is the entry point for the Nix build. It does two things: it declares _inputs_ (which version of nixpkgs and Home Manager to use), and it declares _outputs_ (your Home Manager configuration, identified by your username). When you run `hms --flake ~/dotfiles#yourusername`, Nix reads this file to know which version of Home Manager to use, which version of nixpkgs to resolve packages from, and which configuration to apply (the one identified by `yourusername`). The `flake.lock` file that accompanies it records the exact Git commit hashes for all declared inputs — this is what makes two machines with the same `flake.lock` produce identical environments. Full reference in Appendix B.
 
 `home.nix` is the declaration of your user environment: every global CLI tool, your shell configuration, your git config, your prompt. Think of it as a complete, machine-readable description of what your workstation should look like. When Home Manager evaluates it, it translates every declaration into concrete actions: downloading packages to `/nix/store`, generating `~/.zshrc` from your shell configuration, creating symlinks from generated files into your home directory. The file is structured as a Nix attribute set — keys like `home.packages`, `programs.zsh`, `programs.git`, and `programs.starship` each configure a different aspect of your environment. This is the file you edit most often. Full reference in Appendix B.
 
@@ -1020,11 +1110,11 @@ This repository contains your identity and preferences. Keep it private.
 
 `wezterm/wezterm.lua` is your WezTerm configuration. It is symlinked to `~/.config/wezterm/wezterm.lua` by `setup-desktop.sh`. You edit this file directly and reload with `SUPER+SHIFT+R`. Covered in Part 3.
 
-`tmux/tmux.conf` is your tmux configuration. Its content is embedded in the Home Manager-generated `~/.config/tmux/tmux.conf` via `programs.tmux.extraConfig`. You edit this source file and apply changes with `home-manager switch`; reload the live config with `prefix r`. Covered in Part 3.
+`tmux/tmux.conf` is your tmux configuration. Its content is embedded in the Home Manager-generated `~/.config/tmux/tmux.conf` via `programs.tmux.extraConfig`. You edit this source file and apply changes with `hms`; reload the live config with `prefix r`. Covered in Part 3.
 
 `nvim/` starts as a placeholder directory. The bootstrap stages the LazyVim starter into it during step 13 (§2.4.3). After that, it is a mutable directory containing your Neovim/LazyVim configuration. It is symlinked to `~/.config/nvim/` via the `mkOutOfStoreSymlink` pattern in `home.nix`. Covered in Part 3.
 
-`vscode/extensions.txt` is a plain text file, one extension ID per line. `setup-desktop.sh` installs each extension with `code --install-extension`. Covered in Part 3.
+`vscode/extensions.txt` is a plain text file, one extension ID per line (comments with `#` are ignored). You install these manually after the desktop setup — see §11.3.
 
 `scripts/sessionizer` is the project session manager script. It is symlinked to `~/.local/bin/sessionizer` by the bootstrap and bound to `Ctrl-f` in tmux. Covered in Part 3.
 
@@ -1180,7 +1270,7 @@ touch tmux/tmux.conf
 # LazyVim entry point — staged by bootstrap in Part 2, placeholder only
 touch nvim/init.lua
 
-# VS Code extensions list — covered in Part 3
+# VS Code extensions list — populate with extension IDs, install manually (see §11.3)
 touch vscode/extensions.txt
 
 # Sessionizer script — covered in Part 3
@@ -1512,7 +1602,7 @@ Expected output includes: `flake.nix`, `home.nix`, `wezterm/`, `tmux/`, `nvim/`,
 
 **What happens during this step:** Nix evaluates `flake.nix`, reads `home.nix`, resolves all declared packages, downloads them from `cache.nixos.org` to `/nix/store`, generates your `~/.zshrc` and other Home Manager-managed config files, creates symlinks, and records a new generation. This is the step that installs lazygit, gh, fzf, bat, eza, ripgrep, fd, uv, tmux, Neovim, delta, starship, direnv, xclip/wl-clipboard, tree-sitter, gcc, and just (global fallback — projects also pin their own version in `devenv.nix`).
 
-**Idempotency:** `home-manager switch` is idempotent — re-running it with the same `home.nix` produces the same result.
+**Idempotency:** `hms` is idempotent — re-running it with the same `home.nix` produces the same result.
 
 **Correct completion:** Ends with output similar to:
 
@@ -1556,7 +1646,7 @@ No red error lines. The step typically takes 5–20 minutes on first run.
 
 ---
 
-> [!note] **Git configuration is owned by Home Manager, not the bootstrap.** `user.name`, `user.email`, delta as git pager, and git aliases are all declared in `home.nix` under `programs.git` and applied entirely by step 5 (Home Manager). The bootstrap script does not write any git config and does not prompt for identity. To update your git identity, edit `home.nix` and run `home-manager switch`.
+> [!note] **Git configuration is owned by Home Manager, not the bootstrap.** `user.name`, `user.email`, delta as git pager, and git aliases are all declared in `home.nix` under `programs.git` and applied entirely by step 5 (Home Manager). The bootstrap script does not write any git config and does not prompt for identity. To update your git identity, edit `home.nix` and run `hms`.
 
 ---
 
@@ -1774,7 +1864,7 @@ Open WezTerm from your application launcher. Two things to verify visually:
 tmux -V
 ```
 
-Expected output: `tmux 3.x` — must be 3.2 or later. If it is below 3.2, the Home Manager-installed tmux is not yet on your `$PATH` — open a new terminal and retry. If the version is still below 3.2 after opening a new shell, verify that `tmux` is declared in `home.nix` packages and run `home-manager switch`.
+Expected output: `tmux 3.x` — must be 3.2 or later. If it is below 3.2, the Home Manager-installed tmux is not yet on your `$PATH` — open a new terminal and retry. If the version is still below 3.2 after opening a new shell, verify that `tmux` is declared in `home.nix` packages and run `hms`.
 
 #### Docker
 
@@ -1816,7 +1906,7 @@ If `devenv` is not found, the Nix profile PATH may not be active in this session
 . "$HOME/.nix-profile/etc/profile.d/nix.sh"
 ```
 
-Then retry. If devenv is still not found, verify it is declared in `home.nix` packages and run `home-manager switch`.
+Then retry. If devenv is still not found, verify it is declared in `home.nix` packages and run `hms`.
 
 #### Neovim
 
@@ -1852,7 +1942,7 @@ delta --version
 just --version
 ```
 
-All of these should return version strings. Any that return `command not found` were not installed by Home Manager — check that they are declared in `home.nix` packages and run `home-manager switch`.
+All of these should return version strings. Any that return `command not found` were not installed by Home Manager — check that they are declared in `home.nix` packages and run `hms`.
 
 #### Commit `flake.lock` to Your Dotfiles Repository
 
@@ -1873,7 +1963,7 @@ Verify it is present:
 cat ~/dotfiles/flake.lock | head -5
 ```
 
-Expected output: a JSON structure beginning with `{ "nodes": {`. If the file is missing entirely, the Home Manager step did not complete successfully — re-run `home-manager switch --flake ~/dotfiles#yourusername`.
+Expected output: a JSON structure beginning with `{ "nodes": {`. If the file is missing entirely, the Home Manager step did not complete successfully — re-run `hms`.
 
 ---
 
@@ -1888,7 +1978,7 @@ Your workstation is now running. Every future change to it — adding a tool, tu
 
 2. Apply
    Run the command that activates the change locally
-   (home-manager switch, SUPER+SHIFT+R, prefix r, etc.)
+   (hms, SUPER+SHIFT+R, prefix r, etc.)
 
 3. Verify
    Confirm the change works as expected
@@ -1912,7 +2002,7 @@ nvim ~/dotfiles/home.nix
 # Add the tool to home.packages
 
 # 2. Apply
-home-manager switch
+hms
 
 # 3. Verify
 which your-new-tool
@@ -1948,7 +2038,15 @@ git push
 
 "Apply" means different things depending on which file you edited, because the two management paths (§1.5) have different mechanisms for activating changes.
 
-For **Home Manager-managed files** (`home.nix`), the apply command is always `home-manager switch`. This command:
+For **Home Manager-managed files** (`home.nix`), the apply command is always `hms`. This is a shell alias defined in `home.nix`:
+
+```bash
+alias hms='home-manager switch --flake ~/dotfiles#yourusername'
+```
+
+With a flake-based setup, `home-manager switch` alone fails — the binary has no memory of where your flake lives. You must pass `--flake ~/dotfiles#username` on every invocation. The alias bakes that in so you never have to. It is bootstrapped by the first `nix run` in the bootstrap script; after that, every subsequent apply is just `hms`.
+
+`hms` does the following:
 
 1. Evaluates `home.nix` as a Nix expression, resolving all declared packages and configuration options
 2. Downloads any packages not already in `/nix/store`
@@ -1958,7 +2056,7 @@ For **Home Manager-managed files** (`home.nix`), the apply command is always `ho
 
 The switch is atomic: either the entire new generation is activated, or it fails and the previous state remains intact. There is no partial application.
 
-After `home-manager switch`, shell configuration changes require a new shell to take effect. The running shell has already loaded the previous `~/.zshrc` into memory; the new generated file on disk is not re-read until a new shell starts. Run `exec zsh` or open a new terminal.
+After `hms`, shell configuration changes require a new shell to take effect. The running shell has already loaded the previous `~/.zshrc` into memory; the new generated file on disk is not re-read until a new shell starts. Run `exec zsh` or open a new terminal.
 
 For **user-managed files** (WezTerm, tmux, sessionizer), the apply mechanism is built into the tool's own reload workflow, because the file is symlinked directly — no Nix evaluation is involved:
 
@@ -2004,13 +2102,13 @@ After initial setup, keeping a second machine in sync with changes you have made
 ```bash
 cd ~/dotfiles
 git pull
-home-manager switch
+hms
 ```
 
 ---
 
 > [!note] **What you now have**
-> A fully operational workstation — SSH key on GitHub, dotfiles repository tracking your environment, Nix and Home Manager managing your global tools, WezTerm installed, Docker running, Neovim staged with LazyVim, VS Code installed with extensions, and the four-step workflow active. Every part from here configures a layer you already have installed.
+> A fully operational workstation — SSH key on GitHub, dotfiles repository tracking your environment, Nix and Home Manager managing your global tools, WezTerm installed, Docker running, Neovim staged with LazyVim, VS Code installed, and the four-step workflow active. Every part from here configures a layer you already have installed.
 
 ---
 
@@ -2356,7 +2454,7 @@ _Resolution:_
 fc-list | grep JetBrains
 ```
 
-If this returns nothing, the font installation by Home Manager failed. Re-run `home-manager switch` to retry, or manually download JetBrainsMono Nerd Font from `nerdfonts.com`, unzip to `~/.local/share/fonts/`, and run `fc-cache -fv`.
+If this returns nothing, the font installation by Home Manager failed. Re-run `hms` to retry, or manually download JetBrainsMono Nerd Font from `nerdfonts.com`, unzip to `~/.local/share/fonts/`, and run `fc-cache -fv`.
 
 If the font is installed but boxes still appear, the `font` setting in `wezterm.lua` does not match the installed family name. Use the exact family name from `fc-list` output.
 
@@ -2407,6 +2505,18 @@ _Resolution:_ Keep `copy_on_select = false` (the recommended setting from §3.5)
 
 - **`Shift`-click drag in WezTerm**: quick single-line selection, copies to OS clipboard via WezTerm
 - **`prefix [` in tmux**: enter copy mode for multi-line structured selection, copies via tmux-yank to OS clipboard
+
+---
+
+### Part 3 Summary
+
+WezTerm is a thin rendering surface, not a workspace manager. Its one job is to draw text, apply the Nerd Font, and hand off to tmux. Everything you tune frequently — font size, padding, colour scheme — lives in `~/dotfiles/wezterm/wezterm.lua` and reloads with `SUPER+SHIFT+R` in under a second, bypassing Nix entirely.
+
+The TERM propagation chain (`wezterm` → `screen-256color` inside tmux → Neovim) is the single most common source of colour-rendering bugs. The two settings `term = "wezterm"` and the corresponding tmux lines are load-bearing — do not remove them.
+
+The `copy_on_select` / tmux copy mode interaction is the most common clipboard confusion source. Keep `copy_on_select = false` and use each tool for its intended purpose.
+
+**What carries forward:** Part 4 covers tmux — the persistent layer that WezTerm wraps and the reason WezTerm is disposable.
 
 ---
 
@@ -2487,7 +2597,7 @@ tmux -V
 
 Expected output: `tmux 3.x` where x is 2 or higher. All features used in this guide require tmux 3.2 or later.
 
-If `tmux -V` returns a version below 3.2, the Home Manager-installed tmux may not be on your `$PATH` yet — open a new shell and retry. If the version is still below 3.2, verify that `tmux` is in your `home.nix` packages list and run `home-manager switch`. The system tmux from Ubuntu apt is typically older; the Home Manager version in nixpkgs is always recent.
+If `tmux -V` returns a version below 3.2, the Home Manager-installed tmux may not be on your `$PATH` yet — open a new shell and retry. If the version is still below 3.2, verify that `tmux` is in your `home.nix` packages list and run `hms`. The system tmux from Ubuntu apt is typically older; the Home Manager version in nixpkgs is always recent.
 
 ---
 
@@ -2669,7 +2779,7 @@ The practical guidance: use mouse clicks for pane focus switching and pane resiz
 
 ### 4.7 Plugin Management
 
-Tmux plugins are managed declaratively by Home Manager (`programs.tmux.plugins` in `home.nix`). They are pinned via `flake.lock` and installed when you run `home-manager switch`. No TPM (tmux Plugin Manager) is used. Three plugins are configured. This section explains each plugin's role. The full rationale for each plugin is deferred to where it is exercised in the guide.
+Tmux plugins are managed declaratively by Home Manager (`programs.tmux.plugins` in `home.nix`). They are pinned via `flake.lock` and installed when you run `hms`. No TPM (tmux Plugin Manager) is used. Three plugins are configured. This section explains each plugin's role. The full rationale for each plugin is deferred to where it is exercised in the guide.
 
 #### The Three Installed Plugins
 
@@ -2697,11 +2807,11 @@ programs.tmux = {
 };
 ```
 
-To add a plugin: add it to the `plugins` list in `home.nix` and run `home-manager switch`. The plugin is pinned at the nixpkgs version in `flake.lock`.
+To add a plugin: add it to the `plugins` list in `home.nix` and run `hms`. The plugin is pinned at the nixpkgs version in `flake.lock`.
 
-To remove a plugin: delete it from the `plugins` list and run `home-manager switch`.
+To remove a plugin: delete it from the `plugins` list and run `hms`.
 
-To update plugins: run `nix flake update` in `~/dotfiles`, then `home-manager switch`. This updates all pinned versions in `flake.lock`.
+To update plugins: run `nix flake update` in `~/dotfiles`, then `hms`. This updates all pinned versions in `flake.lock`.
 
 ---
 
@@ -2731,7 +2841,7 @@ which xclip
 which wl-copy
 ```
 
-If either command returns `not found`, add the missing package to `home.nix` packages (`pkgs.xclip` for X11, `pkgs.wl-clipboard` for Wayland) and run `home-manager switch`.
+If either command returns `not found`, add the missing package to `home.nix` packages (`pkgs.xclip` for X11, `pkgs.wl-clipboard` for Wayland) and run `hms`.
 
 #### Step 3: Tmux Clipboard Setting
 
@@ -2799,7 +2909,7 @@ The complete daily-use keybinding table. `prefix` means `C-Space` followed by th
 |`prefix c`|New window|
 |`prefix &`|Kill current window|
 |`prefix x`|Kill current pane|
-|`prefix r`|Reload tmux config (after `home-manager switch`)|
+|`prefix r`|Reload tmux config (after `hms`)|
 
 **Copy mode keys** (after `prefix [`):
 
@@ -2905,6 +3015,18 @@ _Symptom:_ A thin visible line appears between panes, or the tmux status bar bac
 _Cause:_ The Catppuccin colour values in `tmux.conf` do not match WezTerm's `color_scheme`. This can happen if you manually edited the hex colours without updating WezTerm, or if you switched WezTerm themes without updating tmux.
 
 _Resolution:_ Ensure `color_scheme = "Catppuccin Mocha"` in `wezterm.lua` and that the Catppuccin tmux plugin is active (declared in `home.nix` `programs.tmux.plugins`). If you are using a custom colour scheme, update both files simultaneously with matching hex values. Full mechanism: §4.7.
+
+---
+
+### Part 4 Summary
+
+tmux is the persistent workspace layer. Sessions outlive terminal windows, survive WezTerm restarts, and keep long-running processes alive. This is what makes WezTerm disposable — closing it never kills anything.
+
+The two TERM/colour lines in `tmux.conf` (`set -g default-terminal` and `set -ga terminal-overrides`) are the bridge between WezTerm's colour capabilities and what Neovim sees. Getting them wrong produces the most common rendering complaints.
+
+The direnv-in-new-panes problem (§4.11) is the most common post-install surprise. If new tmux panes don't activate your project environment, the fix is the `initContent` load order in `home.nix` — direnv hook must be position 3, not position 7.
+
+**What carries forward:** Part 5 adds the sessionizer — the script that turns tmux sessions into declarative, one-keypress workspaces. It builds directly on the session model you now understand.
 
 ---
 
@@ -3218,7 +3340,7 @@ If `~/.local/bin` is not in the output, it is not on your `$PATH`. Add it to `ho
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Then run `home-manager switch` and open a new shell.
+Then run `hms` and open a new shell.
 
 ---
 
@@ -3302,6 +3424,18 @@ Then press `Ctrl-f`, select the same project, and the sessionizer creates a clea
 
 ---
 
+### Part 5 Summary
+
+The sessionizer embodies a single principle: recreate, never restore. A workspace is defined by a script that can rebuild it in two seconds from scratch. This means there is no state to corrupt, no persistence plugin to maintain, and no session database to lose.
+
+The three layouts (code, ops, notes) cover the three modes of work. Each layout is a set of tmux `send-keys` calls — readable, editable, and extensible without learning any new API. Adding a new project type means adding a new `elif` branch and committing it.
+
+The one fragility (Gemini pane renumbering) has exactly one correct response: kill the session and let the sessionizer recreate it. Attempting manual repair is always slower.
+
+**What carries forward:** Part 6 covers Nerd Fonts — the prerequisite for all the icons and Powerline separators that the WezTerm, tmux, and Neovim layers use.
+
+---
+
 ## Part 6: Nerd Fonts — Making the Terminal Render Correctly
 
 > [!note] **What you now know**
@@ -3347,9 +3481,9 @@ Font installation is a fully automatable sequence of file operations: download a
 
 Home Manager handles this (§6.3), with two specific properties:
 
-**Pinned version.** `nerd-fonts.jetbrains-mono` in `home.packages` is resolved against the nixpkgs version pinned by `flake.lock`. This means two machines running `home-manager switch` from the same flake revision install the same font files, regardless of when the switch is run.
+**Pinned version.** `nerd-fonts.jetbrains-mono` in `home.packages` is resolved against the nixpkgs version pinned by `flake.lock`. This means two machines running `hms` from the same flake revision install the same font files, regardless of when the switch is run.
 
-**Idempotency.** `home-manager switch` only rebuilds the font symlink if the derivation output changed. On a re-run with no `flake.lock` changes, this step is a no-op.
+**Idempotency.** `hms` only rebuilds the font symlink if the derivation output changed. On a re-run with no `flake.lock` changes, this step is a no-op.
 
 If you ever need to verify the font installation manually:
 
@@ -3373,7 +3507,7 @@ fc-cache -fv
 ls ~/.local/share/fonts/NerdFonts/ | grep JetBrains
 ```
 
-If the directory is empty, Home Manager did not install the font. Run `home-manager switch` and check for errors, or download JetBrainsMono Nerd Font manually from `nerdfonts.com`, unzip to `~/.local/share/fonts/`, and run `fc-cache -fv`.
+If the directory is empty, Home Manager did not install the font. Run `hms` and check for errors, or download JetBrainsMono Nerd Font manually from `nerdfonts.com`, unzip to `~/.local/share/fonts/`, and run `fc-cache -fv`.
 
 ---
 
@@ -3436,6 +3570,16 @@ git push
 ```
 
 > [!tip] Keeping the old font installed There is no reason to remove the previous font. Both fonts coexist in `~/.local/share/fonts/NerdFonts/` without conflict. WezTerm uses whichever family name is specified in `wezterm.lua`. You can switch back by changing one line and pressing `SUPER+SHIFT+R`.
+
+---
+
+### Part 6 Summary
+
+Nerd Fonts are a rendering prerequisite, not a cosmetic feature. The Home Manager declaration (`nerd-fonts.jetbrains-mono` in `home.nix`) handles download, installation, and `fc-cache` refresh automatically — no manual font management required. The Noto font package in `setup-desktop.sh` is the fallback that covers Unicode codepoints the Nerd Font omits.
+
+Switching fonts is a one-line change in `wezterm.lua` plus a `SUPER+SHIFT+R` reload. The only constraint: the family name in `wezterm.lua` must exactly match the family name in `fc-list` output.
+
+**What carries forward:** Part 7 covers fzf, zoxide, and the shell config load order — the support tools the sessionizer and interactive shell rely on.
 
 ---
 
@@ -3668,7 +3812,7 @@ alias cat='bat'
 
 ### 7.5 How to Add a New Shell Tool
 
-Every shell tool that needs initialization follows the same pattern. No exceptions — editing `~/.zshrc` directly will be overwritten by the next `home-manager switch`.
+Every shell tool that needs initialization follows the same pattern. No exceptions — editing `~/.zshrc` directly will be overwritten by the next `hms`.
 
 **Step 1: Add the binary to `home.nix` packages**
 
@@ -3696,7 +3840,7 @@ programs.zsh = {
 **Step 3: Apply and verify**
 
 ```bash
-home-manager switch
+hms
 # Open a new shell (the current shell has the old .zshrc)
 your-new-tool --version
 ```
@@ -3710,7 +3854,17 @@ git commit -m "feat: add your-new-tool to shell config"
 git push
 ```
 
-> [!warning] Never edit `~/.zshrc` directly Home Manager overwrites `~/.zshrc` on every `home-manager switch`. Any change made directly to `~/.zshrc` will be silently lost. If you find yourself wanting to edit `~/.zshrc`, the correct action is to identify which `home.nix` block the change belongs in and make it there. The mapping is: packages → `home.packages`; initialization hooks and shell functions → `programs.zsh.initContent`; simple aliases (like `alias ls='eza'`) → either `programs.zsh.shellAliases` (cleaner, declarative) or the aliases block in `initContent` (consistent with functions already there). The Appendix B template places all aliases and functions in `initContent` for simplicity.
+> [!warning] Never edit `~/.zshrc` directly Home Manager overwrites `~/.zshrc` on every `hms`. Any change made directly to `~/.zshrc` will be silently lost. If you find yourself wanting to edit `~/.zshrc`, the correct action is to identify which `home.nix` block the change belongs in and make it there. The mapping is: packages → `home.packages`; initialization hooks and shell functions → `programs.zsh.initContent`; simple aliases (like `alias ls='eza'`) → either `programs.zsh.shellAliases` (cleaner, declarative) or the aliases block in `initContent` (consistent with functions already there). The Appendix B template places all aliases and functions in `initContent` for simplicity.
+
+---
+
+### Part 7 Summary
+
+fzf and zoxide are multipliers: fzf makes `Ctrl-R` history search fast enough to replace muscle-memory retyping; zoxide makes `z project` faster than any alias. Both are declared in `home.nix` and require no manual PATH management.
+
+The shell init load order (§7.4) is the most consequential thing in this Part. The seven rules are not arbitrary — each has a specific dependency on what ran before it. Getting the order wrong produces silent breakage: tools that appear installed but behave incorrectly, completions that don't fire, or direnv that activates too late for tmux panes.
+
+**What carries forward:** Part 8 covers Devenv — the per-project environment layer that Direnv activates when you `cd` into a project directory.
 
 ---
 
@@ -3757,7 +3911,7 @@ If `devenv` is not found, the Nix profile PATH may not be active in the current 
 . "$HOME/.nix-profile/etc/profile.d/nix.sh"
 ```
 
-Then retry. If devenv is still not found, confirm it is in `home.nix` packages and run `home-manager switch`.
+Then retry. If devenv is still not found, confirm it is in `home.nix` packages and run `hms`.
 
 ---
 
@@ -4151,7 +4305,7 @@ docker compose down -v && docker compose up -d
 
 Two settings are required for VS Code to use the devenv environment correctly. Both are covered in full in Part 3; this section covers only the devenv-specific parts.
 
-**`mkhl.direnv` extension** reads `.envrc` and activates the devenv environment inside VS Code's process. Without it, VS Code extensions find only the system `$PATH` and either fail to find tools or find the wrong global versions. This extension is in `vscode/extensions.txt` and is installed by the bootstrap. Full treatment: §8.6.
+**`mkhl.direnv` extension** reads `.envrc` and activates the devenv environment inside VS Code's process. Without it, VS Code extensions find only the system `$PATH` and either fail to find tools or find the wrong global versions. This extension is in `vscode/extensions.txt`; install it with the rest of your extensions as described in §11.3.
 
 **`.vscode/settings.json`** must point `python.defaultInterpreterPath` at the virtualenv created by devenv:
 
@@ -4359,6 +4513,18 @@ git add devenv.nix devenv.lock
 git commit -m "chore: describe what changed"
 git push
 ```
+
+---
+
+### Part 8 Summary
+
+Devenv is the per-project layer: everything in `devenv.nix` is project-specific and applies to everyone working on that project. Everything in `home.nix` is personal and applies only to you across all projects. The boundary matters because crossing it in either direction creates problems — personal tools in `devenv.nix` create unnecessary version churn for teammates; project tools in `home.nix` are not portable to a new machine without extra steps.
+
+The `$PATH` propagation chain (§8.5) — devenv → direnv → shell → Neovim LSP → VS Code extension — is the most frequent source of "my LSP can't find the binary" complaints. When in doubt, verify `which pyright` from the project directory and compare it to what the editor reports.
+
+The v15/v16 split in `devenv.nix` is not a quirk — it reflects a genuine structural difference in how ERPNext manages Python across major versions. Read §8.3–8.4 carefully before setting up a new project.
+
+**What carries forward:** Part 9 covers git and GitHub tooling — the layer that owns commits, branches, and collaboration workflows.
 
 ---
 
@@ -4593,7 +4759,7 @@ home.packages = with pkgs; [
 ];
 ```
 
-Apply: `home-manager switch`. Commit: `git add home.nix && git commit -m "feat: add your-new-git-tool"`.
+Apply: `hms`. Commit: `git add home.nix && git commit -m "feat: add your-new-git-tool"`.
 
 **If it requires git configuration** (like delta's `core.pager` setting):
 
@@ -4610,7 +4776,7 @@ programs.git = {
 
 **If it is a shell function:**
 
-Add it to `home.nix` `programs.zsh.initContent` in the aliases block, following the pattern in §9.4. Apply with `home-manager switch`.
+Add it to `home.nix` `programs.zsh.initContent` in the aliases block, following the pattern in §9.4. Apply with `hms`.
 
 **If it is a `gh` CLI extension** (like `gh poi`):
 
@@ -4624,6 +4790,18 @@ gh extension install owner/repo-name
 # home.nix programs.zsh.initContent comment:
 # Post-bootstrap: gh extension install nicokosi/gh-poi
 ```
+
+---
+
+### Part 9 Summary
+
+All git configuration — identity, delta pager, aliases — is declared in `home.nix` `programs.git`. This means git config is reproducible across machines and never set manually. The bootstrap does not write a single line of `git config` directly.
+
+The `gh`/`delta`/`lazygit` trio covers the three modes of git work: repository operations from the shell (`gh`), diff review (`delta`), and interactive branching and staging (`lazygit`). `gh poi` (or the local `poi()` shell function) solves the branch accumulation problem that builds up silently over weeks of feature work.
+
+`gh` extensions are not managed by Home Manager. After a fresh bootstrap, they must be reinstalled manually. Leave a comment in `home.nix` as a reminder for new machine setup.
+
+**What carries forward:** Part 10 covers Neovim with LazyVim — the most complex section of the guide, and the one that introduces the "project owns its config" philosophy that applies equally to VS Code.
 
 ---
 
@@ -4674,7 +4852,7 @@ home.file.".config/nvim".source =
 
 This tells Home Manager to create `~/.config/nvim` as a direct symlink to `~/dotfiles/nvim` — a mutable path outside the Nix store. LazyVim can write to it freely. The underlying config files are still version-controlled in your dotfiles repository.
 
-> [!warning] The dotfiles path is hardcoded `mkOutOfStoreSymlink` requires an absolute path. Your Neovim config depends on `~/dotfiles/nvim` existing at exactly that location. Moving the dotfiles repository breaks the symlink until you run `home-manager switch` again with the updated path.
+> [!warning] The dotfiles path is hardcoded `mkOutOfStoreSymlink` requires an absolute path. Your Neovim config depends on `~/dotfiles/nvim` existing at exactly that location. Moving the dotfiles repository breaks the symlink until you run `hms` again with the updated path.
 
 This is the documented pattern for mutable config files with Home Manager. It is not a workaround.
 
@@ -4702,7 +4880,7 @@ Every file in `~/dotfiles/nvim/` with its purpose, who writes it, and whether it
       neoconf.lua            # neoconf.nvim plugin declaration
 ```
 
-**`lazy-lock.json` and `lazyvim.json` must be committed.** `lazy-lock.json` records the exact commit hash of every installed plugin — committing it means every machine running `home-manager switch` and then `nvim --headless "+Lazy! sync" +qa` gets bit-for-bit identical plugin versions. `lazyvim.json` records which LazyExtras are enabled.
+**`lazy-lock.json` and `lazyvim.json` must be committed.** `lazy-lock.json` records the exact commit hash of every installed plugin — committing it means every machine running `hms` and then `nvim --headless "+Lazy! sync" +qa` gets bit-for-bit identical plugin versions. `lazyvim.json` records which LazyExtras are enabled.
 
 ---
 
@@ -6168,6 +6346,18 @@ git push
 
 ---
 
+### Part 10 Summary
+
+The central principle of this Part — and the one that carries across the entire stack — is that **tools belong to the project, not the editor**. LSP servers, formatters, and linters are declared in `devenv.nix`, run from `/nix/store`, and are identical for every developer on the project regardless of which editor they use. `mason = false` everywhere is not a limitation; it is the enforcement mechanism for this principle.
+
+The four configuration vectors (LazyVim defaults → `plugins/` overrides → `config/` → `.lazy.lua` escape hatch) form a hierarchy. Work with the defaults as far as possible. Override at `plugins/` for tool integration. Use `.lazy.lua` only for per-project deviations that should not apply everywhere.
+
+The `debugpy` exception (§10.13) is the most important "exception to the rule" in this Part. It cannot go in `devenv.nix packages`. It must be in `requirements.txt`. This is a `debugpy` architectural constraint, not a mistake in the setup.
+
+**What carries forward:** Part 11 covers VS Code as the parallel editor path. It shares the entire project layer (`.editorconfig`, `pyproject.toml`, `devenv.nix`) with Neovim — no duplication, no conflict.
+
+---
+
 ## Part 11: VS Code Configuration
 
 > [!note] **What you now know**
@@ -6213,9 +6403,15 @@ apt list --installed 2>/dev/null | grep code
 
 ---
 
-### 11.3 Extensions: What Gets Installed and Why
+### 11.3 Extensions: What to Install and Why
 
-The bootstrap installs all extensions listed in `~/dotfiles/vscode/extensions.txt` using `code --install-extension`. The full list with a purpose annotation for each:
+Extensions are not installed automatically — `code --install-extension` requires a running display and fails when called from a setup script without one. Install them manually after the desktop is up (Installation Step 6):
+
+```bash
+grep -v '^#\|^$' ~/dotfiles/vscode/extensions.txt | xargs -I{} code --install-extension {}
+```
+
+Populate `~/dotfiles/vscode/extensions.txt` with the following (one extension ID per line, `#` comments are ignored):
 
 ```
 ms-python.python            Python language support, Pylance LSP, debugger
@@ -6531,16 +6727,27 @@ git push
 
 Add the extension ID to `.vscode/extensions.json` `recommendations` array and commit. The next time a teammate opens the project in VS Code, they will be prompted to install it.
 
-**Adding a new extension to the bootstrap:**
+**Adding a new extension to your list:**
 
-Add the extension ID to `~/dotfiles/vscode/extensions.txt` and run `home-manager switch` to pick up the change. Then commit the updated `extensions.txt` to your dotfiles repository:
+Add the extension ID to `~/dotfiles/vscode/extensions.txt`, install it, then commit:
 
 ```bash
 echo "new-publisher.new-extension" >> ~/dotfiles/vscode/extensions.txt
+code --install-extension new-publisher.new-extension
 git -C ~/dotfiles add vscode/extensions.txt
-git -C ~/dotfiles commit -m "feat: add new-extension to VS Code bootstrap"
+git -C ~/dotfiles commit -m "feat: add new-extension to VS Code list"
 git -C ~/dotfiles push
 ```
+
+---
+
+### Part 11 Summary
+
+VS Code and Neovim share the entire project layer — `.editorconfig`, `pyproject.toml`, `pyrightconfig.json`, `devenv.nix`, and `.vscode/launch.json` are identical for both editors. There is no duplication and no conflict. A teammate on either editor picks up the same formatting rules, the same LSP config, and the same debug launch configuration automatically.
+
+The devenv / `$PATH` problem (§11.6) is the single most important VS Code configuration detail. Without the `mkhl.direnv` extension activating first, every other extension (`pylance`, `eslint`, the debugger) uses system binaries instead of the project's pinned versions. Verify with `which python` from the VS Code integrated terminal — it must resolve to a `/nix/store/...` path, not `/usr/bin/python`.
+
+VS Code extensions are not managed by Home Manager. After a fresh bootstrap, install them with the one-liner from `~/dotfiles/vscode/extensions.txt`. Note the command in `home.nix` as a reminder.
 
 ---
 
@@ -6705,9 +6912,20 @@ nix run github:nix-community/home-manager -- \
     switch --flake "$DOTFILES_DIR#${GITHUB_USER}"
 ok "Home Manager applied"
 
+# Verify that Home Manager actually succeeded by checking for a key binary.
+if ! command -v zsh &>/dev/null && [ ! -x "$HOME/.nix-profile/bin/zsh" ]; then
+    warn "zsh not found after Home Manager apply – HM may have failed"
+    warn "Re-run manually: nix run github:nix-community/home-manager -- switch --flake $DOTFILES_DIR#${GITHUB_USER}"
+fi
+
 # Source the new profile so subsequent steps find HM-installed binaries.
 # shellcheck disable=SC1090
-. "$HOME/.nix-profile/etc/profile.d/nix.sh" 2>/dev/null || true
+if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+    . "$HOME/.nix-profile/etc/profile.d/nix.sh"
+else
+    warn "Nix profile script not found – HM-installed binaries may not be on PATH"
+    warn "Expected: $HOME/.nix-profile/etc/profile.d/nix.sh"
+fi
 
 # ── Step 6: Install Docker Engine ────────────────────────────────────────────
 step "Installing Docker Engine"
@@ -6770,8 +6988,16 @@ if ! command -v gemini &>/dev/null; then
         "$NPM_BIN" install -g --prefix "$NPM_PREFIX" @google/gemini-cli
         export PATH="$NPM_PREFIX/bin:$PATH"
         if command -v gemini &>/dev/null; then
-            gemini extension install conductor || true
-            gemini mcp install context7 || true
+            if gemini extension install conductor; then
+                ok "Gemini Conductor extension installed"
+            else
+                warn "Gemini Conductor extension install failed – install manually later"
+            fi
+            if gemini mcp install context7; then
+                ok "Gemini Context7 MCP installed"
+            else
+                warn "Gemini Context7 MCP install failed – install manually later"
+            fi
         fi
         ok "Gemini CLI installed"
     else
@@ -6790,8 +7016,12 @@ step "Symlinking user-managed dotfiles"
 if [ -f "$DOTFILES_DIR/scripts/sessionizer" ]; then
     chmod +x "$DOTFILES_DIR/scripts/sessionizer"
     ln -sf "$DOTFILES_DIR/scripts/sessionizer" "$HOME/.local/bin/sessionizer"
+    ok "sessionizer symlinked to ~/.local/bin/sessionizer"
+else
+    warn "scripts/sessionizer not found in dotfiles – symlink skipped"
+    warn "Add scripts/sessionizer to your dotfiles repo and re-run bootstrap, or symlink manually"
 fi
-ok "Dotfiles symlinked (sessionizer; tmux managed by HM, wezterm by setup-desktop.sh)"
+ok "Dotfile symlinks complete (tmux managed by HM, wezterm by setup-desktop.sh)"
 
 # ── Step 11: Stage LazyVim starter into dotfiles ─────────────────────────────
 step "Staging LazyVim starter"
@@ -6810,8 +7040,14 @@ fi
 step "Running LazyVim headless plugin sync"
 NVIM_BIN="${HOME}/.nix-profile/bin/nvim"
 if [ -x "$NVIM_BIN" ]; then
-    "$NVIM_BIN" --headless "+Lazy! sync" +qa 2>/dev/null || true
-    ok "LazyVim plugins synced headlessly"
+    LAZY_LOG="$(mktemp /tmp/lazyvim-sync.XXXXXX.log)"
+    if timeout 300 "$NVIM_BIN" --headless "+Lazy! sync" +qa >"$LAZY_LOG" 2>&1; then
+        ok "LazyVim plugins synced headlessly"
+    else
+        warn "LazyVim headless sync exited non-zero or timed out after 300s"
+        warn "Log saved to: $LAZY_LOG"
+        warn "Run ':Lazy sync' manually on first Neovim open"
+    fi
 else
     warn "Neovim not found in Nix profile – skipping headless sync"
     warn "Run ':Lazy sync' manually on first Neovim open"
@@ -7018,6 +7254,9 @@ whoami
       # 8. Remaining aliases — after all tool inits
       alias ls='eza --color=auto --icons'
       alias cat='bat'
+      # hms: home-manager with flake path baked in.
+      # With flakes, home-manager always needs --flake; this alias makes it ergonomic.
+      alias hms='home-manager switch --flake ~/dotfiles#yourusername'  # ← substitute username
 
       # ── Shell utility functions (§11.4) ────────────────────────
       repo-status() {
@@ -7337,7 +7576,7 @@ volumes:
 
 ## Appendix E: Complete `tmux.conf`
 
-Complete annotated configuration. Save to `~/dotfiles/tmux/tmux.conf`. Home Manager generates `~/.config/tmux/tmux.conf` from this file via `programs.tmux.extraConfig`. Reload with `prefix r` after any `home-manager switch`.
+Complete annotated configuration. Save to `~/dotfiles/tmux/tmux.conf`. Home Manager generates `~/.config/tmux/tmux.conf` from this file via `programs.tmux.extraConfig`. Reload with `prefix r` after any `hms`.
 
 ```bash
 # ~/dotfiles/tmux/tmux.conf
@@ -7587,6 +7826,18 @@ tamasfe.even-better-toml
 
 Organised by symptom. Each entry: symptom, cause, resolution. Setup and activation failures only — git and workflow failures are in Dev Workflows.
 
+> [!tip] **Before searching this appendix, ask: which layer owns this?**
+> The §1.2 debugging heuristic resolves 90% of problems faster than any symptom list:
+> - Missing command or wrong version → **Devenv** (`devenv.nix` packages) or **Home Manager** (`home.nix` packages)
+> - Tool missing globally → **Home Manager** → `hms`
+> - Tool missing in one project → **Devenv** → `devenv.nix` packages + `devenv update`
+> - Database/service not connecting → **Docker Compose** → `docker compose up -d`
+> - Environment not activating on `cd` → **Direnv** → `direnv allow`; check hook order (§7.4)
+> - Icons/colour broken → **Nerd Font** (Part 6) or **TERM propagation** (§3.3, §4.4)
+> - Editor LSP not finding tools → **Devenv `$PATH` not reaching editor** → §8.5, §11.6
+>
+> The full layer reference is §1.9.
+
 ---
 
 ### Nix Installation Fails
@@ -7602,7 +7853,7 @@ sudo useradd -r nobody
 
 ---
 
-### `home-manager switch` Errors
+### `hms` (`home-manager switch`) Errors
 
 **Symptom:** `error: attribute 'yourusername' missing` **Cause:** The username string after `#` in the switch command does not match the `homeConfigurations` key in `flake.nix`. **Resolution:** Confirm `whoami` matches the key in `flake.nix` and `home.nix`:
 
@@ -7656,7 +7907,7 @@ fc-list | grep JetBrains | head -3
 
 **Cause 2:** The direnv hook is initialised too late in `.zshrc`. **Symptom detail:** This specifically affects the first pane in new tmux sessions — tmux fires the initial window command before `.zshrc` finishes. **Resolution:** In `home.nix` `programs.zsh.initContent`, move `eval "$(direnv hook zsh)"` to position 3 in the load order (after PATH and Nix profile, before zoxide and fzf). See §11.4.
 
-**Cause 3:** nix-direnv is not enabled in `home.nix`. **Resolution:** Verify `programs.direnv.nix-direnv.enable = true` in `home.nix` and run `home-manager switch`.
+**Cause 3:** nix-direnv is not enabled in `home.nix`. **Resolution:** Verify `programs.direnv.nix-direnv.enable = true` in `home.nix` and run `hms`.
 
 ---
 
@@ -7755,7 +8006,7 @@ which xclip               # for X11
 which wl-copy             # for Wayland
 ```
 
-If missing, add `pkgs.xclip` or `pkgs.wl-clipboard` to `home.nix` packages and run `home-manager switch`.
+If missing, add `pkgs.xclip` or `pkgs.wl-clipboard` to `home.nix` packages and run `hms`.
 
 ---
 
@@ -8718,7 +8969,7 @@ Any new machine:
   wget → bootstrap.sh           # installs the environment (fully unattended)
     └── verifies SSH key        # exits with instructions if missing
     └── git clone dotfiles      # pulls your private config
-    └── home-manager switch     # builds the environment
+    └── hms     # builds the environment
 ```
 
 You are ready to go to Part 1 (or skip straight to §2.4 if you prefer to read while the bootstrap runs).
@@ -8733,7 +8984,7 @@ For `dotfiles/`:
 
 ```bash
 # Edit: change home.nix, wezterm.lua, tmux.conf, etc.
-# Apply: home-manager switch (for home.nix) or SUPER+SHIFT+R (for wezterm.lua) etc.
+# Apply: hms (for home.nix) or SUPER+SHIFT+R (for wezterm.lua) etc.
 # Verify: confirm the change works
 cd ~/dotfiles && git add -A && git commit -m "description" && git push
 ```
