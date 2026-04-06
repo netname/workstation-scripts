@@ -120,6 +120,14 @@ else
     ok "WezTerm already installed – skipping"
 fi
 
+# Grant WezTerm's Flatpak sandbox read access to the Nix store.
+# Home Manager installs JetBrainsMono Nerd Font into /nix/store and exposes it
+# via ~/.nix-profile/share/fonts. Flatpak's bubblewrap sandbox does not mount
+# /nix by default, so WezTerm cannot follow the symlink chain to the actual
+# font files — producing the "Unable to load font" warning on startup.
+flatpak override --user --filesystem=/nix:ro org.wezfurlong.wezterm
+ok "Flatpak /nix access granted (Nix-managed fonts now visible to WezTerm)"
+
 # ── 8. wezterm.lua symlink ────────────────────────────────────────────────────
 step "Symlinking wezterm.lua"
 mkdir -p "$HOME/.config/wezterm"

@@ -61,14 +61,22 @@ Step 3 — SSH key registered:
 
 ### Installation
 
-> [!note] **Before you begin**
-> Your two GitHub repositories must exist and be populated before running anything on a new machine:
-> - `workstation-scripts` — public repo containing `setup-base.sh`, `bootstrap.sh`, and `setup-desktop.sh`
-> - `dotfiles` — private repo containing `flake.nix`, `home.nix`, and your personal config
->
-> If you haven't created them yet, follow Appendix M first, then come back here. If you are setting up a second machine from an existing dotfiles repo, start at Step 1 below.
->
-> VMware users: see Appendix K before Step 1.
+#### All steps at a glance
+
+| # | Step | Where | Time |
+|---|---|---|---|
+| **0** | Create two GitHub repositories, populate scripts and config, set your git identity | Your machine (once) | 15–30 min |
+| **1** | Install apt prerequisites | Target machine | ~2 min |
+| **2** | Generate an SSH key and register it on GitHub | Target machine | ~5 min |
+| **3** | Run the bootstrap | Target machine | 20–40 min |
+| **4** | Complete post-bootstrap steps (re-login, authenticate CLI tools) | Target machine | ~5 min |
+| **5** | *(Desktop only)* Install the desktop layer | Target machine | ~10 min |
+| **6** | *(Desktop only)* Reboot and connect via RDP | — | ~5 min |
+| **7** | Verify the installation | Target machine | ~5 min |
+
+**Step 0 is a one-time setup.** If your repositories already exist and are configured (you are setting up a second or replacement machine), skip Step 0 and start at Step 1.
+
+> [!note] **VMware users:** See Appendix K before Step 1.
 
 ---
 
@@ -78,10 +86,37 @@ Step 3 — SSH key registered:
 |---|---|---|
 | **What you get** | Full dev environment over SSH: tmux, Neovim, Docker, Gemini CLI, GitHub CLI | Everything above, plus XFCE4 desktop, XRDP remote access, WezTerm, VS Code, Chrome, ksnip |
 | **Typical use** | Cloud VM, server, VPS, VM you SSH into | VMware/VirtualBox VM or bare metal with a monitor (or RDP access from Windows) |
-| **Steps required** | Steps 1–4, then Step 7 | Steps 1–7 |
-| **Script** | `bootstrap.sh` | `bootstrap.sh` → `setup-desktop.sh` |
+| **Steps** | 0–4, then 7 | 0–7 |
 
-Steps 1–4 are identical for both paths. Steps 5–6 are optional (graphical desktop only).
+---
+
+#### Step 0 — Create and configure your repositories (first machine only)
+
+> [!tip] **📋 Full walkthrough in Appendix M.** Appendix M creates both GitHub repositories from scratch and populates them with all reference files. Follow it now if you haven't already, then return here.
+
+Before running anything on a new machine, two repositories must exist, be populated, and be **pushed to GitHub**:
+
+- `workstation-scripts` (public) — `bootstrap.sh`, `setup-base.sh`, `setup-desktop.sh`
+- `dotfiles` (private) — `flake.nix`, `home.nix`, and your personal config
+
+**What to personalise in `home.nix` before pushing:**
+
+| Setting | Where in `home.nix` | What to enter |
+|---|---|---|
+| Linux username | `home.username` and `home.homeDirectory` | Output of `whoami` on the target machine |
+| Git name | `programs.git.settings.user.name` | Your full name, e.g. `"Jane Smith"` |
+| Git email | `programs.git.settings.user.email` | The email address registered on your GitHub account |
+
+`init.defaultBranch = "main"` is already set in the Appendix B reference — no change needed. Also replace `yourusername` in `flake.nix` with your Linux username.
+
+**What to personalise in `bootstrap.sh` before pushing:**
+
+```bash
+GITHUB_USER="yourusername"                              # ← your GitHub username
+DOTFILES_REPO="git@github.com:yourusername/dotfiles.git"  # ← your private dotfiles SSH URL
+```
+
+> [!important] Push both repositories before continuing. The bootstrap fetches scripts directly from GitHub — local changes that have not been pushed are invisible to it.
 
 ---
 
@@ -134,12 +169,32 @@ If authentication fails, confirm the key is saved at [github.com/settings/keys](
 
 **Step 3 — Run the bootstrap** (~20–40 minutes, unattended)
 
+Download the bootstrap script:
+
 ```bash
 wget -O bootstrap.sh https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh
 chmod +x bootstrap.sh
+```
+
+Verify your personal values were pushed correctly — these must not contain placeholder text:
+
+```bash
+grep -E "GITHUB_USER|DOTFILES_REPO" bootstrap.sh
+```
+
+Expected output:
+```
+GITHUB_USER="yourusername"
+DOTFILES_REPO="git@github.com:yourusername/dotfiles.git"
+```
+
+If you still see `yourusername` literally: the script was not pushed with your edits from Step 0. Fix and push, then re-download.
+
+Run the bootstrap:
+
+```bash
 ./bootstrap.sh
 ```
-> [!note] **Make sure to edit bootstrap.sh before running it**. Put the correct values for `GITHUB_USER` and `DOTFILES_REPO`
 
 The bootstrap runs fully automatically with no prompts. It installs:
 
@@ -1331,7 +1386,12 @@ wc -l bootstrap.sh setup-base.sh setup-desktop.sh   # all must be non-zero
 
 Open Appendix B and copy both files into your repository, substituting your username where indicated.
 
-> [!important] Substitute your username before proceeding Both `flake.nix` and `home.nix` contain the placeholder `yourusername`. Replace every occurrence with your actual Linux username (the output of `whoami`) before saving. A mismatch here causes the bootstrap to fail at the Home Manager step with a configuration error that is easy to diagnose but annoying to hit.
+> [!important] Three substitutions required in `home.nix` before proceeding
+> 1. **Linux username** — replace every occurrence of `yourusername` with your actual Linux username (`whoami`). A mismatch causes the bootstrap to fail at the Home Manager step.
+> 2. **Git name** — set `programs.git.settings.user.name` to your full name (e.g. `"Jane Smith"`).
+> 3. **Git email** — set `programs.git.settings.user.email` to the email address registered on your GitHub account. This is the address that will appear on every commit you make.
+>
+> `flake.nix` also contains `yourusername` — replace it there too.
 
 Verify `flake.nix` is not empty:
 
@@ -7342,14 +7402,16 @@ whoami
   };
 
   # ── git: global config ──────────────────────────────────────────────────────
+  # !! EDIT user.name and user.email before running the bootstrap !!
   programs.git = {
     enable = true;
     # user.name and user.email are declared here — bootstrap does NOT write git config
     settings = {
       user = {
-        name  = "yourusername";             # ← substitute your name
-        email = "you@example.com";          # ← substitute your email
+        name  = "Your Name";               # ← your full name (e.g. "Jane Smith")
+        email = "you@example.com";         # ← email registered on your GitHub account
       };
+      init.defaultBranch = "main";
       core.pager    = "delta";
       delta = {
         side-by-side  = true;
@@ -7875,7 +7937,7 @@ grep "homeConfigurations" ~/dotfiles/flake.nix
 
 ### WezTerm Shows Boxes instead of Icons
 
-**Symptom:** Powerline separators in the tmux status bar appear as `□` or `?`. File icons in Neovim's file explorer are missing. **Cause:** Either the Nerd Font is not installed, or WezTerm is configured with the wrong font name.
+**Symptom:** Powerline separators in the tmux status bar appear as `□` or `?`. File icons in Neovim's file explorer are missing. **Cause:** Either the Nerd Font is not installed, WezTerm is configured with the wrong font name, or Flatpak's sandbox is blocking access to Nix-managed fonts.
 
 **Diagnosis — check if font is installed:**
 
@@ -7893,7 +7955,15 @@ unzip JetBrainsMono.zip -d ~/.local/share/fonts/NerdFonts/
 fc-cache -fv
 ```
 
-If the font is installed but boxes persist: the family name in `wezterm.lua` is wrong. Use the exact name from `fc-list` output:
+If `fc-list | grep JetBrains` returns output but WezTerm still shows the _"Unable to load a font"_ warning: WezTerm is installed via Flatpak and its sandbox cannot follow the symlink `~/.nix-profile/share/fonts → /nix/store/...`. Fix by granting Flatpak read access to the Nix store:
+
+```bash
+flatpak override --user --filesystem=/nix:ro org.wezfurlong.wezterm
+```
+
+Then restart WezTerm. This is now applied automatically by `setup-desktop.sh`.
+
+If the font is installed and Flatpak access is granted but boxes persist: the family name in `wezterm.lua` is wrong. Use the exact name from `fc-list` output:
 
 ```bash
 fc-list | grep JetBrains | head -3
