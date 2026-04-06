@@ -112,11 +112,13 @@ Copy the entire line starting with `ssh-ed25519`. Go to [github.com/settings/key
 >
 > ```bash
 > # Run this on your LOCAL machine, not the installation machine
-> scp YOURUSER@INSTALL_MACHINE_IP:~/.ssh/id_ed25519.pub ~/Downloads/install_key.pub
-> cat ~/Downloads/install_key.pub
+> scp YOURUSER@INSTALL_MACHINE_IP:~/.ssh/id_ed25519.pub install_key.pub
+> cat install_key.pub
 > ```
 >
 > Replace `YOURUSER` with your username on the installation machine and `INSTALL_MACHINE_IP` with its IP address or hostname (from `ip addr` or `hostname -I`).
+> If you get "Host Key Verification Failed" when trying to `scp` this is a security error: your SSH client has a stored host key (usually ~/.ssh/known_hosts) for that IP, and it no longer matches the new machine. To prevent a potential "Man-in-the-Middle" attack, SSH blocks the connection until you clear the old record
+> Remove the old entry: `ssh-keygen -R <IP_ADDRESS>`
 
 Verify the key works before continuing:
 
