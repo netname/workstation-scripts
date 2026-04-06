@@ -90,7 +90,7 @@ Steps 1–4 are identical for both paths. Steps 5–6 are optional (graphical de
 On the machine where you want the environment installed:
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-base.sh)
+wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-base.sh | bash
 ```
 
 Replace `yourusername` with your GitHub username. This installs `curl`, `wget`, `git`, `openssh-client`, `build-essential`, `ca-certificates`, and other apt prerequisites. `wget` is pre-installed on Ubuntu 22.04 and 24.04 — no other tools are required.
@@ -133,7 +133,7 @@ If authentication fails, confirm the key is saved at [github.com/settings/keys](
 **Step 3 — Run the bootstrap** (~20–40 minutes, unattended)
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh)
+wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh | bash
 ```
 
 The bootstrap runs fully automatically with no prompts. It installs:
@@ -179,7 +179,7 @@ Back up your SSH private key to a secure location — it cannot be recovered fro
 > [!important] **Complete Steps 1–4 before running this.** The bootstrap must succeed first.
 
 ```bash
-bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-desktop.sh)
+wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-desktop.sh | bash
 ```
 
 This script installs:
