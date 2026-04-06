@@ -223,7 +223,7 @@ gh auth login        # prints a one-time code + URL — open the URL on any devi
 gemini auth login    # prints a one-time code + URL — open the URL on any device
 ```
 
-> [!note] **No browser needed on this machine.** Both CLIs use a device flow: they print a short code and a URL (e.g. `github.com/login/device`). Open that URL on any phone, laptop, or other machine, enter the code, and authentication completes on the headless machine.
+> [!note] **No browser needed on this machine.** Both CLIs use a device flow: they print a short code and a URL (e.g. `github.com/login/device`). Open that URL on any phone, laptop, or other machine, enter the code, and authentication completes on the headless machine. **Tip: SSH from another machine with a GUI so you can copy and paste**
 
 Back up your SSH private key to a secure location — it cannot be recovered from the dotfiles repository:
 
