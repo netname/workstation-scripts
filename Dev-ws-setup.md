@@ -39,7 +39,7 @@ The two repositories serve different purposes and have different audiences:
 
 ```
 Step 1 — On a new machine, with nothing installed:
-  wget → workstation-scripts/setup-base.sh   (installs curl, git, openssh-client)
+  wget → workstation-scripts/setup-base.sh   (installs curl, git, openssh-client, build-essential)
 
 Step 2 — Still no SSH key:
   ssh-keygen generates a key locally
@@ -47,7 +47,8 @@ Step 2 — Still no SSH key:
   ssh -T git@github.com verifies the key works
 
 Step 3 — SSH key registered:
-  wget → workstation-scripts/bootstrap.sh    (runs the full bootstrap, no pauses)
+  wget → workstation-scripts/bootstrap.sh    (runs the full bootstrap, fully unattended)
+  bootstrap verifies SSH key → exits with instructions if missing
   bootstrap clones your PRIVATE dotfiles repo via SSH
   home-manager switch builds your environment
 ```
@@ -58,16 +59,29 @@ Step 3 — SSH key registered:
 
 ---
 
-### Quickstart
+### Installation
 
 > [!note] **Before you begin**
 > Your two GitHub repositories must exist and be populated before running anything on a new machine:
-> - `workstation-scripts` — public repo containing `setup-base.sh` and `bootstrap.sh`
+> - `workstation-scripts` — public repo containing `setup-base.sh`, `bootstrap.sh`, and `setup-desktop.sh`
 > - `dotfiles` — private repo containing `flake.nix`, `home.nix`, and your personal config
 >
 > If you haven't created them yet, follow Appendix M first, then come back here. If you are setting up a second machine from an existing dotfiles repo, start at Step 1 below.
 >
 > VMware users: see Appendix K before Step 1.
+
+---
+
+#### Which setup are you doing?
+
+| | Headless / server | Graphical desktop |
+|---|---|---|
+| **What you get** | Full dev environment over SSH: tmux, Neovim, Docker, Gemini CLI, GitHub CLI | Everything above, plus XFCE4 desktop, XRDP remote access, WezTerm, VS Code, Chrome, ksnip |
+| **Typical use** | Cloud VM, server, VPS, VM you SSH into | VMware/VirtualBox VM or bare metal with a monitor (or RDP access from Windows) |
+| **Steps required** | Steps 1–4, then Step 7 | Steps 1–7 |
+| **Script** | `bootstrap.sh` | `bootstrap.sh` → `setup-desktop.sh` |
+
+Steps 1–4 are identical for both paths. Steps 5–6 are optional (graphical desktop only).
 
 ---
 
@@ -79,7 +93,7 @@ On the machine where you want the environment installed:
 bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-base.sh)
 ```
 
-Replace `yourusername` with your GitHub username. This installs `curl`, `git`, `openssh-client`, `zsh`, and other apt packages the bootstrap depends on. `wget` is pre-installed on Ubuntu 22.04 and 24.04 — no other tools are required.
+Replace `yourusername` with your GitHub username. This installs `curl`, `wget`, `git`, `openssh-client`, `build-essential`, `ca-certificates`, and other apt prerequisites. `wget` is pre-installed on Ubuntu 22.04 and 24.04 — no other tools are required.
 
 ---
 
@@ -122,7 +136,19 @@ If authentication fails, confirm the key is saved at [github.com/settings/keys](
 bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh)
 ```
 
-When prompted, enter your git `user.name` and `user.email`. Everything else is automated — Nix, Home Manager, WezTerm, tmux, Neovim, Docker, and VS Code are installed without further input.
+The bootstrap runs fully automatically with no prompts. It installs:
+
+- **Nix + Home Manager** — global packages, shell config, git identity, tmux plugins, JetBrainsMono Nerd Font (all declared in `home.nix`, pinned by `flake.lock`)
+- **Docker Engine** — rootless daemon, user added to `docker` group
+- **GitHub CLI** (`gh`) — installed by Home Manager; apt fallback on first run
+- **Gemini CLI** + Conductor + Context7 MCP — installed via npm into `~/.local`
+- **tmux** — plugins managed by Home Manager (`programs.tmux.plugins`); no TPM required
+- **Neovim + LazyVim** — staged from the LazyVim starter and synced headlessly
+- **sessionizer** — symlinked from `~/dotfiles/scripts/sessionizer` into `~/.local/bin`
+
+Git identity (`user.name`, `user.email`) is declared in `home.nix` and applied by Home Manager — the bootstrap does not prompt for it.
+
+> [!important] **GUI tools (WezTerm, VS Code, Chrome, ksnip) are NOT installed by the bootstrap.** They require a display and are handled by `setup-desktop.sh` in Step 5.
 
 > [!tip] The bootstrap takes 20–40 minutes. Part 1 explains the mental model for everything it sets up — the reading fits neatly in that window.
 
@@ -144,9 +170,61 @@ Back up your SSH private key to a secure location — it cannot be recovered fro
 ~/.ssh/id_ed25519
 ```
 
+> [!tip] **Headless path ends here.** If you are setting up a server or a VM you access only via SSH, jump to Step 7 to verify the installation. Steps 5 and 6 are for graphical desktop setups only.
+
 ---
 
-**Step 5 — Verify the installation** (~5 minutes)
+**Step 5 — Install the graphical desktop** (optional, ~10 minutes)
+
+> [!important] **Complete Steps 1–4 before running this.** The bootstrap must succeed first.
+
+```bash
+bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-desktop.sh)
+```
+
+This script installs:
+
+| Component | What it is |
+|---|---|
+| XFCE4 + LightDM | Desktop environment and login screen |
+| XRDP | Remote desktop server (RDP from Windows) |
+| Google Chrome | Browser (required for `gh auth login` OAuth flow) |
+| Noto fonts | Glyph fallback for WezTerm (covers U+23F5 and Miscellaneous Technical Unicode) |
+| WezTerm | Terminal emulator (installed via Flatpak for GPU driver access) |
+| VS Code | Code editor via apt — NOT snap (snap blocks `/nix/store` access) |
+| ksnip | Screenshot annotation tool |
+| XFCE defaults | Sets WezTerm as preferred terminal; Ctrl+Alt+T opens WezTerm |
+
+> [!note] **JetBrainsMono Nerd Font** is installed by Home Manager (Step 3), not by this script. It is declared in `home.nix` (`nerd-fonts.jetbrains-mono`) and pinned via `flake.lock`.
+
+After the script finishes:
+
+```bash
+sudo reboot
+```
+
+---
+
+**Step 6 — Connect via RDP and configure the desktop** (desktop path only)
+
+After rebooting:
+
+1. Open **Remote Desktop Connection** (`mstsc`) on Windows
+2. Enter the VM's IP address (from `ip addr show`)
+3. Select **Xorg** as the session type when prompted by XRDP
+4. Log in with your Ubuntu username and password
+
+> [!warning] **One session at a time.** Do not keep a local XFCE session open at the VM console while an XRDP session is also active. Both sessions fight over the same display resources.
+
+**Verify WezTerm opens:**  Press `Ctrl+Alt+T` — WezTerm should open and launch tmux automatically (tmux `new-session -A -s main` is set in `wezterm.lua`).
+
+**Multi-monitor setup** — see §L.2 for span mode and dual-monitor options.
+
+**Window tiling shortcuts** — see §L.3 for the xfwm4 keyboard shortcut setup (`Super+Arrow` for halves, `Super+Ctrl+Arrow` for quarters).
+
+---
+
+**Step 7 — Verify the installation** (~5 minutes)
 
 Run through the checklist in §2.6 to confirm every component is working correctly.
 
@@ -160,7 +238,7 @@ Appendix J  →  get a machine ready if you need one (optional)
 Part 1      →  understand the stack before or while installing it
 Part 2      →  install everything (the bootstrap + verification)
 Parts 3–11  →  configure each tool to your preferences
-Appendix L  →  (optional) add a graphical desktop + RDP access
+Appendix L  →  desktop connection details and tiling shortcuts (reference)
 ```
 
 **The scripts at a glance:**
@@ -168,8 +246,8 @@ Appendix L  →  (optional) add a graphical desktop + RDP access
 | Script | Repo | What it does | When |
 |---|---|---|---|
 | `setup-base.sh` | `workstation-scripts` (public) | Installs apt prerequisites | Before bootstrap, on any new machine |
-| `bootstrap.sh` | `workstation-scripts` (public) | Installs the full dev environment | Once per machine |
-| `setup-desktop.sh` | `workstation-scripts` (public) | XFCE4 + XRDP + Chrome (optional) | After bootstrap, if you want a GUI |
+| `bootstrap.sh` | `workstation-scripts` (public) | Full headless dev environment (Nix, HM, Docker, gh, Gemini, tmux, Neovim) | Once per machine |
+| `setup-desktop.sh` | `workstation-scripts` (public) | Display layer + GUI apps (XFCE4, XRDP, WezTerm, VS Code, Chrome, ksnip) | After bootstrap, desktop path only |
 
 > [!note] Sections that provide a script you can run instead of following manual steps are marked with a **📋 Script available** callout at the top. You can always follow the manual steps to understand what the script does, or run the script directly and refer back to the manual steps if something goes wrong.
 
@@ -484,7 +562,7 @@ The table below maps common changes to the correct path:
 |Change git aliases|`home.nix` programs.git|`home-manager switch`|
 |Change terminal font or colors|`~/dotfiles/wezterm/wezterm.lua`|`SUPER+SHIFT+R`|
 |Change tmux prefix or keybindings|`~/dotfiles/tmux/tmux.conf`|`prefix r`|
-|Add a tmux plugin|`~/dotfiles/tmux/tmux.conf` then `prefix + I`|`prefix r` then `prefix + I`|
+|Add a tmux plugin|`home.nix` `programs.tmux.plugins` list|`home-manager switch`|
 |Update all Nix packages|`nix flake update` in dotfiles repo|`home-manager switch`|
 
 ---
@@ -696,7 +774,7 @@ This is the reference you will reach for after initial setup. Every question a d
 |Change shell prompt appearance|`home.nix` `programs.starship`|`home-manager switch`|
 |Change terminal font, colors, or padding|`~/dotfiles/wezterm/wezterm.lua`|`SUPER+SHIFT+R`|
 |Change tmux prefix key or keybindings|`~/dotfiles/tmux/tmux.conf`|`prefix r`|
-|Add a tmux plugin|`~/dotfiles/tmux/tmux.conf` + `set -g @plugin`|`prefix r`, then `prefix + I`|
+|Add a tmux plugin|`home.nix` `programs.tmux.plugins` list|`home-manager switch`|
 |Add a new stateful service (database, queue)|`docker-compose.yml`|`docker compose up -d`|
 |Update all Nix packages globally|`nix flake update` in dotfiles repo|`home-manager switch`|
 |Update all Nix packages for a project|`devenv update` in project root|Direnv re-activates|
@@ -812,7 +890,7 @@ Step 4 is never optional. A change that is not committed exists only on this mac
 > [!note] **What you will have by the end of this part**
 > - An SSH key registered on GitHub
 > - A dotfiles repository on GitHub containing your complete environment declaration
-> - A fully bootstrapped workstation: Nix, Home Manager, WezTerm, tmux, Neovim, Docker, VS Code, and all global CLI tools installed and verified
+> - A fully bootstrapped workstation: Nix, Home Manager, tmux, Neovim, Docker, and all global CLI tools installed and verified (GUI tools — WezTerm, VS Code — are added by `setup-desktop.sh` for desktop setups)
 > - The four-step workflow internalised through your first real use of it
 
 This part is a single, continuous installation sequence. §2.1–§2.3 prepare the dotfiles repository that the bootstrap needs. §2.4 runs the bootstrap. §2.5–§2.6 complete and verify the installation. §2.7 explains the daily workflow you will use from this point forward.
@@ -902,7 +980,7 @@ Each repository has required files. The bootstrap script references these paths 
 workstation-scripts/
   bootstrap.sh                 # Main bootstrap — installs the full dev environment
   setup-base.sh                # Apt prerequisites — run on any new Ubuntu machine first
-  setup-desktop.sh             # Optional desktop — XFCE4 + XRDP + Chrome (Appendix L)
+  setup-desktop.sh             # Optional desktop — XFCE4 + XRDP + WezTerm + VS Code + ksnip (Appendix L)
 ```
 
 These three files have no personal data. Anyone can read them. Their entire purpose is to be fetchable by a new machine with nothing installed.
@@ -927,7 +1005,7 @@ dotfiles/
   scripts/
     sessionizer                # tmux project session manager script
   xfce4/
-    xfce4-keyboard-shortcuts.xml  # XFCE tiling shortcuts backup (§L.5.5, optional)
+    xfce4-keyboard-shortcuts.xml  # XFCE tiling shortcuts backup (§L.3.5, optional)
 ```
 
 This repository contains your identity and preferences. Keep it private.
@@ -938,23 +1016,23 @@ This repository contains your identity and preferences. Keep it private.
 
 `home.nix` is the declaration of your user environment: every global CLI tool, your shell configuration, your git config, your prompt. Think of it as a complete, machine-readable description of what your workstation should look like. When Home Manager evaluates it, it translates every declaration into concrete actions: downloading packages to `/nix/store`, generating `~/.zshrc` from your shell configuration, creating symlinks from generated files into your home directory. The file is structured as a Nix attribute set — keys like `home.packages`, `programs.zsh`, `programs.git`, and `programs.starship` each configure a different aspect of your environment. This is the file you edit most often. Full reference in Appendix B.
 
-`bootstrap.sh` is the script covered in Part 2. It reads `flake.nix` and `home.nix` to build your environment, then handles the tools that cannot be managed by Nix (WezTerm via Flatpak, Docker via apt, fonts, VS Code via apt).
+`bootstrap.sh` is the script covered in Part 2. It reads `flake.nix` and `home.nix` to build your environment via Home Manager, then handles the tools that cannot be managed by Nix (Docker via apt, Gemini CLI via npm). GUI tools (WezTerm, VS Code, Chrome, ksnip) are installed separately by `setup-desktop.sh` and are not part of the bootstrap.
 
-`wezterm/wezterm.lua` is your WezTerm configuration. It is symlinked to `~/.config/wezterm/wezterm.lua` by the bootstrap. You edit this file directly and reload with `SUPER+SHIFT+R`. Covered in Part 3.
+`wezterm/wezterm.lua` is your WezTerm configuration. It is symlinked to `~/.config/wezterm/wezterm.lua` by `setup-desktop.sh`. You edit this file directly and reload with `SUPER+SHIFT+R`. Covered in Part 3.
 
-`tmux/tmux.conf` is your tmux configuration. It is symlinked to `~/.config/tmux/tmux.conf` by the bootstrap. You edit this file directly and reload with `prefix r`. Covered in Part 3.
+`tmux/tmux.conf` is your tmux configuration. Its content is embedded in the Home Manager-generated `~/.config/tmux/tmux.conf` via `programs.tmux.extraConfig`. You edit this source file and apply changes with `home-manager switch`; reload the live config with `prefix r`. Covered in Part 3.
 
-`nvim/` starts as a placeholder directory. The bootstrap stages the LazyVim starter into it during step 11 (§3.3). After that, it is a mutable directory containing your Neovim/LazyVim configuration. It is symlinked to `~/.config/nvim/` via the `mkOutOfStoreSymlink` pattern in `home.nix`. Covered in Part 3.
+`nvim/` starts as a placeholder directory. The bootstrap stages the LazyVim starter into it during step 13 (§2.4.3). After that, it is a mutable directory containing your Neovim/LazyVim configuration. It is symlinked to `~/.config/nvim/` via the `mkOutOfStoreSymlink` pattern in `home.nix`. Covered in Part 3.
 
-`vscode/extensions.txt` is a plain text file, one extension ID per line. The bootstrap installs each extension with `code --install-extension`. Covered in Part 3.
+`vscode/extensions.txt` is a plain text file, one extension ID per line. `setup-desktop.sh` installs each extension with `code --install-extension`. Covered in Part 3.
 
 `scripts/sessionizer` is the project session manager script. It is symlinked to `~/.local/bin/sessionizer` by the bootstrap and bound to `Ctrl-f` in tmux. Covered in Part 3.
 
 `scripts/setup-base.sh` installs the apt prerequisites for any Ubuntu machine before the bootstrap runs. It is fetched via `curl` from the raw GitHub URL (same pattern as `bootstrap.sh`) and is the starting point for any new machine setup. Full script in Appendix K (§K.5).
 
-`scripts/setup-desktop.sh` installs the optional desktop layer: XFCE4, LightDM, XRDP, Google Chrome, and the polkit shutdown rule. Run it after the bootstrap if you want a graphical environment accessible via RDP. Full script in Appendix L (§L.6).
+`scripts/setup-desktop.sh` installs the optional desktop layer: XFCE4, LightDM, XRDP, WezTerm, VS Code, Chrome, ksnip, and the polkit shutdown rule. Run it after the bootstrap if you want a graphical environment accessible via RDP (Installation Step 5).
 
-`xfce4/xfce4-keyboard-shortcuts.xml` is an optional backup of the XFCE4 window tiling keyboard shortcuts configured in §L.5. Not used by the bootstrap — restore manually if needed on a new desktop machine (§L.5.5).
+`xfce4/xfce4-keyboard-shortcuts.xml` is an optional backup of the XFCE4 window tiling keyboard shortcuts configured in §L.3. Not used by the bootstrap — restore manually if needed on a new desktop machine (§L.3.5).
 
 > [!tip] `flake.nix` and `home.nix` reference Complete, working implementations of both files — not snippets — are in Appendix B. Read this section to understand the structure; go to Appendix B to copy the files. The appendix versions are annotated and ready to use with only your username substituted.
 
@@ -1136,7 +1214,7 @@ Open each appendix and copy the script content. No personal substitutions are ne
 |---|---|---|
 | `bootstrap.sh` | Appendix A | `GITHUB_USER` and `DOTFILES_REPO` variables (see below) |
 | `setup-base.sh` | Appendix K (§K.5) | None |
-| `setup-desktop.sh` | Appendix L (§L.6) | None |
+| `setup-desktop.sh` | Appendix L (§L.4) | None |
 
 After copying, edit `bootstrap.sh` to set the two variables at the top:
 
@@ -1265,26 +1343,26 @@ Without these flags, a failed step would silently continue, leaving the environm
 
 **What it installs and configures, in order:**
 
-1. System dependencies (`git`, `curl`)
-2. Clones your dotfiles repository to `~/dotfiles`
-3. Installs Nix via the Determinate Systems installer
-4. Applies Home Manager via your flake — this is the step that installs all global CLI tools
-5. Installs WezTerm via Flatpak
-6. Installs JetBrainsMono Nerd Font
-7. Installs Docker Engine via the official apt repository
-8. Configures git identity, delta as pager for both `git` and `gh`, and git aliases
-9. Verifies GitHub CLI availability (installed by Home Manager in step 4; installs via apt as fallback only)
-10. Installs Gemini CLI, Conductor extension, and Context7 MCP via npm
-11. Installs tmux Plugin Manager (TPM) and runs headless plugin install
-12. Stages LazyVim starter into `~/dotfiles/nvim/`
-13. Runs LazyVim headless plugin sync
-14. Installs VS Code via the official apt repository
-15. Installs VS Code extensions from `vscode/extensions.txt`
-16. Symlinks user-managed dotfiles (WezTerm, tmux, sessionizer)
+| | Step | What |
+|---|---|---|
+| Pre-flight | — | Creates user-owned XDG directories (`~/.config/*`, `~/.local/bin`, `~/.ssh`) before any `sudo` call |
+| Step 1 | System dependencies | Installs `git`, `curl`, `openssh-client`, `zsh`, and related apt packages; sets zsh as the login shell |
+| Step 2 | Verify SSH key | Confirms `~/.ssh/id_ed25519` exists and is authenticated with GitHub — exits with error if missing |
+| Step 3 | Clone dotfiles | Clones your private dotfiles repository to `~/dotfiles` |
+| Step 4 | Install Nix | Installs Nix via the Determinate Systems installer |
+| Step 5 | Apply Home Manager | Builds your full user environment — installs all global CLI tools, tmux plugins, JetBrainsMono Nerd Font, and owns git identity, delta pager, and aliases |
+| Step 6 | Install Docker Engine | Adds the official apt repository, installs Docker Engine, adds user to `docker` group |
+| Step 7 | Verify GitHub CLI + configure pager | Confirms `gh` is available (Home Manager installs it; apt is the fallback); sets `gh` pager to delta |
+| Step 8 | Install Gemini CLI | Installs `@google/gemini-cli` via npm, plus Conductor extension and Context7 MCP |
+| Step 9 | Symlink dotfiles | Creates symlink for sessionizer — **must precede LazyVim** |
+| Step 10 | Stage LazyVim | Copies LazyVim starter into `~/dotfiles/nvim/` |
+| Step 11 | LazyVim headless sync | Installs all LazyVim plugins without opening Neovim |
 
-**Total duration:** 20–40 minutes on first run, depending on internet speed. The majority of the time is Nix downloading packages during step 4.
+> [!note] **GUI tools (WezTerm, VS Code, Chrome, ksnip) are installed by `setup-desktop.sh`**, not by the bootstrap. The bootstrap is headless-safe and runs identically on a server or desktop VM.
 
-> [!important] Run the bootstrap only after completing §2.3 The script clones your dotfiles repository at step 2. If the repository does not exist on GitHub, or if `flake.nix` and `home.nix` are empty placeholders, the bootstrap will fail at steps 2 or 4 respectively. Complete Part 2 — including pushing to GitHub — before proceeding.
+**Total duration:** 20–40 minutes on first run, depending on internet speed. The majority of the time is Nix downloading packages during step 5.
+
+> [!important] Run the bootstrap only after completing §2.3 The script clones your dotfiles repository at step 3. If the repository does not exist on GitHub, or if `flake.nix` and `home.nix` are empty placeholders, the bootstrap will fail at steps 3 or 5 respectively. Complete Part 2 — including pushing to GitHub — before proceeding.
 
 ---
 
@@ -1302,31 +1380,31 @@ bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scri
 
 Replace `yourusername` with your GitHub username. The bootstrap script is fetched from your **public** `workstation-scripts` repository over unauthenticated HTTPS — no SSH key, no credentials needed at this stage.
 
-> [!note] **Why `workstation-scripts` and not `dotfiles`?** The `workstation-scripts` repo is public so `curl` can fetch it without credentials. Your `dotfiles` repo is private. The bootstrap script itself handles cloning the private `dotfiles` repo — it generates an SSH key, pauses for you to register it on GitHub, then clones your private dotfiles via SSH. You do not need to make your personal configuration public.
+> [!note] **Why `workstation-scripts` and not `dotfiles`?** The `workstation-scripts` repo is public so `wget` can fetch it without credentials. Your `dotfiles` repo is private. The bootstrap verifies your SSH key is present and authenticated (step 2), then clones your private dotfiles via SSH (step 3). If the key is missing when the bootstrap runs, it exits immediately with instructions — no generation, no pause. You do not need to make your personal configuration public.
 
 **What you will see:** The script prints a coloured step announcement before each phase. Each step either completes silently (already installed) or prints what it is doing. A typical first-run looks like:
 
 ```
 🚀 Starting workstation bootstrap...
-Installing system dependencies...
-Cloning dotfiles repository...
-Installing Nix (Determinate Systems)...
+▶ Pre-creating user-owned directories
+▶ Installing system dependencies (git, curl, openssh-client, flatpak, zsh)
+▶ Setting zsh as login shell
+▶ Verifying SSH key for GitHub
+▶ Cloning private dotfiles repository
+▶ Installing Nix
   [several minutes of Nix output]
-Applying Home Manager configuration...
+▶ Applying Home Manager configuration
   [several minutes of package downloads]
-Installing WezTerm...
-Installing JetBrainsMono Nerd Font...
-Installing Docker Engine...
-Configuring git...
-Installing GitHub CLI...
-Installing Gemini CLI and extensions...
-Installing tmux Plugin Manager...
-Staging LazyVim...
-Running LazyVim headless plugin sync...
-Installing VS Code...
-Installing VS Code extensions...
-Symlinking dotfiles...
-✅ Bootstrap complete!
+▶ Installing WezTerm
+▶ Installing JetBrainsMono Nerd Font
+▶ Installing Docker Engine
+▶ Verifying GitHub CLI
+▶ Configuring gh pager
+▶ Installing Gemini CLI and extensions
+▶ Symlinking user-managed dotfiles
+▶ Staging LazyVim starter
+▶ Running LazyVim headless plugin sync
+✔ Bootstrap complete!
 ```
 
 **If the script stops with an error:** The error message names the step. Find the matching step number in §3.3, read the failure output description, and follow the resolution. Every expected failure mode is covered there.
@@ -1339,29 +1417,60 @@ This section walks through every step of the bootstrap in the order the script e
 
 The full script is in Appendix A. This section describes each step in prose so you understand what is happening and can diagnose failures without reading shell code.
 
-> [!note] **No pauses if you pre-registered the SSH key.** If you generated and registered `~/.ssh/id_ed25519` before running the bootstrap (Quickstart Step 3), the bootstrap detects the existing key, skips generation, verifies GitHub authentication, and continues automatically — no human action required. If the key does not exist when the bootstrap runs, it generates one, prints it, and pauses once for registration before continuing.
+> [!important] **The SSH key must exist before running the bootstrap.** The bootstrap verifies that `~/.ssh/id_ed25519` is present and that `ssh -T git@github.com` succeeds. If the key is missing, the script exits immediately (code 1) and prints the `ssh-keygen` command and registration instructions — there is no generation, no pause, and no interactive prompt. Fix the precondition (Quickstart Step 2), then re-run.
 
 ---
 
 #### Step 1: Install System Dependencies
 
-**What:** Installs `git` and `curl` via `apt`.
+**Pre-flight (before Step 1):** Before any `sudo` call, the script creates user-owned XDG directories: `~/.config/git`, `~/.config/tmux`, `~/.local/bin`, and `~/.ssh`. This prevents `apt` or `gpg` from implicitly creating `~/.config` owned by root, which would cause "Permission denied" errors in later user-space writes.
 
-**Why first:** Every subsequent step either clones a git repository or fetches a script over HTTPS. Without `git` and `curl`, nothing else can run.
+**What:** Installs `git`, `curl`, `openssh-client`, and `zsh` via `apt`. Then sets zsh as your login shell via `usermod`.
 
-**Idempotency:** `apt install` is idempotent by default — it skips packages that are already at the required version.
+**Why first:** Every subsequent step either clones a git repository or fetches a script over HTTPS. Without `git` and `curl`, nothing else can run. `openssh-client` is needed for the GitHub SSH verification. `zsh` must be installed before it can be set as the default shell.
 
-**Correct completion:** No error output. On a fresh Ubuntu install, `git` and `curl` may already be present; the step completes in a few seconds either way.
+**The zsh login shell change:** `usermod -s /usr/bin/zsh $USER` updates `/etc/passwd` but takes effect only at the next login — not in the current session. The bootstrap runs in whatever shell invoked it. Zsh becomes your default shell after the post-bootstrap re-login (§2.5).
+
+**Idempotency:** `apt install` is idempotent. The `usermod` call is guarded by a check that skips it if the shell is already set to zsh.
+
+**Correct completion:** No error output. The step completes in a few seconds.
 
 ---
 
-#### Step 2: Clone the Dotfiles Repository
+#### Step 2: Verify SSH Key
+
+**What:** Confirms that `~/.ssh/id_ed25519` exists and that SSH authentication to GitHub succeeds. Also pre-seeds `~/.ssh/known_hosts` with the GitHub host key so that subsequent `git` calls over SSH never prompt interactively.
+
+**Why a hard stop, not a prompt:** The bootstrap is designed to run fully unattended. A pause mid-script would break piped or remote invocations. The precondition check is enforced up front (before any state is changed) so that if it fails, nothing has been installed and re-running after fixing the key is safe.
+
+**What happens if the key is missing:**
+
+```
+✗ SSH key not found at ~/.ssh/id_ed25519
+
+Generate and register an SSH key before running bootstrap:
+  ssh-keygen -t ed25519 -C "youruser@workstation" -f ~/.ssh/id_ed25519 -N ""
+  cat ~/.ssh/id_ed25519.pub
+Paste the key at https://github.com/settings/keys, then verify:
+  ssh-keyscan github.com >> ~/.ssh/known_hosts
+  ssh -T git@github.com
+```
+
+The script then exits with code 1. Fix the precondition (Quickstart Step 2) and re-run.
+
+**Idempotency:** Pre-seeding `known_hosts` is idempotent (same entry can appear multiple times safely). The SSH check itself is a read-only operation.
+
+**Correct completion:** `✓ SSH key verified – GitHub authentication successful`
+
+---
+
+#### Step 3: Clone the Dotfiles Repository
 
 **What:** Clones `git@github.com:yourusername/dotfiles.git` to `~/dotfiles`. If `~/dotfiles` already exists (re-run scenario), fetches and hard-resets to `origin/main` instead.
 
 **Why here:** All subsequent steps read files from `~/dotfiles`. The Home Manager step reads `flake.nix` and `home.nix`. The symlink step reads `wezterm/wezterm.lua`, `tmux/tmux.conf`, and `scripts/sessionizer`. Nothing can proceed until the repository is local.
 
-**Idempotency:** Checks for the existence of `~/dotfiles` before cloning. On re-run, uses `git fetch origin main && git reset --hard origin/main` rather than `git pull --rebase`. This is because the Home Manager step (step 4) generates `flake.lock` inside `~/dotfiles`, leaving an uncommitted file that would cause `git pull --rebase` to refuse with "cannot rebase: you have unstaged changes." Hard reset discards any locally generated files and always brings the working tree into sync with the remote.
+**Idempotency:** Checks for the existence of `~/dotfiles` before cloning. On re-run, uses `git fetch origin main && git reset --hard origin/main` rather than `git pull --rebase`. This is because the Home Manager step (step 5) generates `flake.lock` inside `~/dotfiles`, leaving an uncommitted file that would cause `git pull --rebase` to refuse with "cannot rebase: you have unstaged changes." Hard reset discards any locally generated files and always brings the working tree into sync with the remote.
 
 **Correct completion:** `~/dotfiles` exists and contains the expected structure. Verify:
 
@@ -1369,11 +1478,11 @@ The full script is in Appendix A. This section describes each step in prose so y
 ls ~/dotfiles
 ```
 
-Expected output includes: `flake.nix`, `home.nix`, `bootstrap.sh`, `wezterm/`, `tmux/`, `nvim/`, `vscode/`, `scripts/`
+Expected output includes: `flake.nix`, `home.nix`, `wezterm/`, `tmux/`, `nvim/`, `vscode/`, `scripts/`
 
 ---
 
-#### Step 3: Install Nix
+#### Step 4: Install Nix
 
 **What:** Downloads and runs the Determinate Systems Nix installer.
 
@@ -1389,11 +1498,11 @@ Expected output includes: `flake.nix`, `home.nix`, `bootstrap.sh`, `wezterm/`, `
 
 - _Symptom:_ `curl: (6) Could not resolve host: install.determinate.systems` — network issue; verify internet connectivity and retry
 - _Symptom:_ `error: the user 'nobody' does not exist` — rare on some Ubuntu minimal installs; install with `sudo useradd -r nobody` then retry
-- _Symptom:_ Installer completes but `nix --version` fails in the next step — the profile sourcing line did not execute; run `. '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'` manually and retry from step 4
+- _Symptom:_ Installer completes but `nix --version` fails in the next step — the profile sourcing line did not execute; run `. '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'` manually and retry from step 5
 
 ---
 
-#### Step 4: Apply Home Manager
+#### Step 5: Apply Home Manager
 
 **What:** Runs `nix run github:nix-community/home-manager -- switch --flake ~/dotfiles#yourusername`. This is the most time-consuming step and the most consequential: it downloads every package declared in `home.nix` and rebuilds your user environment.
 
@@ -1431,37 +1540,7 @@ No red error lines. The step typically takes 5–20 minutes on first run.
 
 ---
 
-#### Step 5: Install WezTerm
-
-**What:** Installs WezTerm via Flatpak from Flathub.
-
-**Why Flatpak, not apt:** The Ubuntu apt package for WezTerm lags significantly behind the current release. WezTerm's official distribution channel on Linux is the Flatpak. The Flatpak version receives updates promptly and is what the WezTerm documentation references.
-
-**Why not Home Manager:** WezTerm is a GUI application with a complex dependency tree (GPU drivers, font rendering, Wayland/X11 integration). Nix on Ubuntu can manage WezTerm, but it requires additional `nixGL` wrapper configuration to handle OpenGL correctly on non-NixOS systems. Flatpak handles all of this transparently.
-
-**Why `--user`, not system-wide:** `flatpak install` without `--user` attempts a system-wide installation and requires either root or polkit agent approval — neither of which is available in an unattended bootstrap. The `--user` flag installs into `~/.local/share/flatpak/`, which requires no elevated privileges. The Flatpak binary is then exposed at `~/.local/share/flatpak/exports/bin/org.wezfurlong.wezterm`; the bootstrap creates a symlink at `~/.local/bin/wezterm` (already on `$PATH` from `home.nix`) so you can invoke WezTerm as `wezterm` from any terminal.
-
-**Idempotency:** Checks for `wezterm` on `$PATH` and for the package in the user Flatpak list before installing. Flatpak install is also idempotent if re-run.
-
-**Correct completion:** `wezterm --version` returns a version string. The first time you open WezTerm after the bootstrap, it will use the default configuration until the symlink step (step 16) places your `wezterm.lua` at `~/.config/wezterm/wezterm.lua`.
-
----
-
-#### Step 6: Install JetBrainsMono Nerd Font
-
-**What:** Downloads the pinned JetBrainsMono Nerd Font release zip, extracts it to `~/.local/share/fonts/NerdFonts/`, and runs `fc-cache -fv` to register the font with the system.
-
-**Why automated, not manual:** Font installation is a fully automatable sequence of file operations. Making it a manual step guarantees that it gets skipped at least once per machine setup. The bootstrap handles it so you never think about it.
-
-**Why a pinned version:** Pinning the download URL to a specific release version means the bootstrap produces the same font file on every machine. An unpinned "latest" URL would install whatever version is current at bootstrap time, which may differ between machines set up months apart.
-
-**Idempotency:** Checks for the font directory before downloading. If `~/.local/share/fonts/NerdFonts/` already exists and is non-empty, the download is skipped.
-
-**Correct completion:** `fc-list | grep JetBrainsMono` returns one or more lines. If it returns nothing, the font cache refresh failed — run `fc-cache -fv` manually and retry the check.
-
----
-
-#### Step 7: Install Docker Engine
+#### Step 6: Install Docker Engine
 
 **What:** Adds the official Docker apt repository, installs Docker Engine (not Docker Desktop), and adds your user to the `docker` group.
 
@@ -1477,29 +1556,23 @@ No red error lines. The step typically takes 5–20 minutes on first run.
 
 ---
 
-#### Step 8: Configure Git, Delta, and Aliases
-
-**What:** Configures `user.name`, `user.email`, delta as the pager for both `git` and `gh`, and a set of standard git aliases. Prompts for your name and email if not already set.
-
-**Why delta must be configured for both `git` and `gh`:** Git and GitHub CLI have completely independent output pipelines. Setting `git config --global core.pager delta` configures git's output. Configuring `gh config set pager delta` is a separate command that configures gh's output. One does not affect the other. Both are required to get syntax-highlighted diffs everywhere.
-
-**Idempotency:** Checks `git config --global user.name` before prompting. If already set (re-run scenario), skips the prompt.
-
-**Correct completion:** `git config --global --list` shows `user.name`, `user.email`, `core.pager=delta`, and the configured aliases.
+> [!note] **Git configuration is owned by Home Manager, not the bootstrap.** `user.name`, `user.email`, delta as git pager, and git aliases are all declared in `home.nix` under `programs.git` and applied entirely by step 5 (Home Manager). The bootstrap script does not write any git config and does not prompt for identity. To update your git identity, edit `home.nix` and run `home-manager switch`.
 
 ---
 
-#### Step 9: Verify GitHub CLI Availability
+#### Step 7: Verify GitHub CLI and Configure gh Pager
 
-**What:** Adds the GitHub CLI apt repository and installs `gh`.
+**What:** Verifies that `gh` is available on `$PATH`. If it is not (edge case where the Home Manager PATH has not propagated), installs `gh` via the official apt repository as a fallback. Then runs `gh config set pager delta` to configure gh's output pager.
 
-**Why via apt:** `gh` is already declared in `home.nix` packages and thus installed by Home Manager in step 4. This step is the fallback for the case where the Home Manager step needs to be re-run or where `gh` is needed before Home Manager completes. On a clean run, this step is a no-op because `gh` is already on `$PATH` from step 4.
+**Why verify rather than install:** `gh` is declared in `home.nix` packages and is installed by Home Manager in step 5. On a clean run, it is already available and this step completes in under a second. The apt install is the fallback for the rare case where `gh` is not yet findable via `$PATH` after the Home Manager switch.
 
-> [!tip] If `gh` was installed by Home Manager in step 4, this step's idempotency check (`command -v gh`) fires immediately and the step takes less than a second.
+**Why configure gh pager separately from git pager:** Git's pager (`core.pager`) and gh's pager are completely independent settings. Home Manager's `programs.git` manages the git pager via `home.nix`. The gh pager is a runtime config value (`~/.config/gh/config.yml`) that Home Manager does not expose as a declarative option — it must be set imperatively. Both settings are required to get delta-highlighted diffs everywhere.
+
+> [!tip] If `gh` was installed by Home Manager in step 5, this step's idempotency check (`command -v gh`) fires immediately and the step takes less than a second.
 
 ---
 
-#### Step 10: Install Gemini CLI, Conductor, and Context7 MCP
+#### Step 8: Install Gemini CLI, Conductor, and Context7 MCP
 
 **What:** Installs `@google/gemini-cli` globally via npm, then installs the Conductor extension (`gemini extension install conductor`) and the Context7 MCP server (`gemini mcp install context7`).
 
@@ -1515,39 +1588,37 @@ No red error lines. The step typically takes 5–20 minutes on first run.
 
 ---
 
-#### Step 11: Install Tmux Plugin Manager and Plugins
+#### Step 9: Symlink User-Managed Dotfiles
 
-**What:** Clones TPM (tmux Plugin Manager) to `~/.tmux/plugins/tpm`, then immediately runs `~/.tmux/plugins/tpm/scripts/install_plugins.sh` to install all plugins declared in `tmux.conf` without requiring an interactive tmux session.
+> [!important] **This step must run before LazyVim (steps 10–11).** The `nvim/` directory must be in place (symlinked by Home Manager in step 5) before the LazyVim headless sync can run.
 
-**Why headless install:** TPM's normal installation flow requires you to open tmux and press `prefix + I`. This cannot happen inside a bootstrap script that does not have an interactive terminal session. The `install_plugins.sh` script is TPM's own mechanism for headless installation; it reads the plugin declarations from `tmux.conf` and installs them directly.
+**What:** Creates one symlink:
 
-**The three plugins installed:**
+```
+~/dotfiles/scripts/sessionizer  →  ~/.local/bin/sessionizer
+```
 
-- **Catppuccin** — matches the WezTerm color scheme; prevents color seams at pane borders (covered in detail in Part 3)
-- **vim-tmux-navigator** — enables seamless `Ctrl-h/j/k/l` navigation between tmux panes and Neovim windows
-- **tmux-yank** — copies tmux copy-mode selections to the OS clipboard
+**Why `~/.local/bin/` for the sessionizer:** `~/.local/bin/` is the standard per-user executable directory on Ubuntu. Home Manager adds it to `$PATH` via `home.nix`. Once the symlink exists, `sessionizer` is available as a command from anywhere.
 
-**Why tmux-resurrect and tmux-continuum are not included:** These plugins save and restore tmux session state. Session state conflicts with the declarative recreation model used by the sessionizer (Part 3): you recreate workspaces from a script, not from saved state. Saved state goes stale, produces conflicts after reboots, and creates exactly the unpredictable environment the stack is designed to prevent.
+**tmux and WezTerm configs:** `~/.config/tmux/tmux.conf` is generated by Home Manager (`programs.tmux.extraConfig` reads `~/dotfiles/tmux/tmux.conf` and appends plugin run lines) — no manual symlink is needed. `~/.config/wezterm/wezterm.lua` is symlinked by `setup-desktop.sh`, not the bootstrap.
 
-**Idempotency:** Checks for `~/.tmux/plugins/tpm` before cloning.
-
-**Correct completion:** `~/.tmux/plugins/` contains `tpm/`, `tmux/` (the Catppuccin plugin), `vim-tmux-navigator/`, and `tmux-yank/`.
+**Idempotency:** Uses `ln -sf` (force), which overwrites an existing symlink with the correct target. Safe to re-run.
 
 ---
 
-#### Step 12: Stage LazyVim Starter
+#### Step 10: Stage LazyVim Starter
 
 **What:** Clones the LazyVim starter repository to `/tmp/lazyvim-starter`, copies its contents into `~/dotfiles/nvim/`, and removes the `.git` directory from the copy.
 
 **Why copy rather than clone into place:** Cloning the starter directly into `~/dotfiles/nvim/` would create a nested git repository, which breaks git operations in the outer `~/dotfiles` repository. Copying the files and removing `.git` gives you the LazyVim starter as plain files that are tracked by your dotfiles repository.
 
-**The `mkOutOfStoreSymlink` connection:** `home.nix` declares `home.file.".config/nvim".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/nvim"`. This means Home Manager created `~/.config/nvim` as a symlink pointing to `~/dotfiles/nvim/` during step 4. After step 12 populates that directory, Neovim can find its configuration immediately.
+**The `mkOutOfStoreSymlink` connection:** `home.nix` declares `home.file.".config/nvim".source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/dotfiles/nvim"`. This means Home Manager created `~/.config/nvim` as a symlink pointing to `~/dotfiles/nvim/` during step 5. After step 13 populates that directory, Neovim can find its configuration immediately.
 
-**Idempotency:** Checks for `~/dotfiles/nvim/` before cloning. If the directory exists (either from a previous run or because you populated it manually from Part 2), this step is skipped.
+**Idempotency:** Checks whether `~/dotfiles/nvim/init.lua` exists and is non-empty before cloning. If it is already populated (re-run or manual setup), this step is skipped.
 
 ---
 
-#### Step 13: Run LazyVim Headless Plugin Sync
+#### Step 11: Run LazyVim Headless Plugin Sync
 
 **What:** Runs `nvim --headless "+Lazy! sync" +qa` to install all LazyVim plugins without opening an interactive Neovim session.
 
@@ -1559,58 +1630,6 @@ No red error lines. The step typically takes 5–20 minutes on first run.
 
 ---
 
-#### Step 14: Install VS Code
-
-**What:** Adds the Microsoft VS Code apt repository and installs `code`.
-
-**Why apt repository, not snap:** The VS Code snap package runs in a sandboxed filesystem environment that cannot access files under `/nix/store`. This means the `mkhl.direnv` extension — which needs to read Devenv's environment from paths like `/nix/store/...` — fails silently when VS Code is installed via snap. The apt repository installation runs VS Code as a normal process with full filesystem access.
-
-**Idempotency:** Checks for `code` on `$PATH` before installing.
-
----
-
-#### Step 15: Install VS Code Extensions
-
-**What:** Reads `~/dotfiles/vscode/extensions.txt` line by line and runs `code --install-extension` for each extension ID.
-
-**Why loop rather than a single command:** `code --install-extension` installs one extension per invocation. There is no batch install command. The loop continues even if a single extension fails to install (network hiccup, extension ID changed), so one failure does not block the rest.
-
-**Why `code` must be sourced before this step:** The apt installation in step 14 adds VS Code to `$PATH`, but the current shell session does not reflect that addition until the PATH is refreshed. The bootstrap script sources the updated PATH explicitly before running this step.
-
-**Idempotency:** `code --install-extension` is idempotent — installing an already-installed extension is a no-op.
-
-**Correct completion:** Each extension prints `Extension 'extension-id' is already installed` or `Installing extensions...` followed by `Extension 'extension-id' v1.2.3 was successfully installed!`
-
----
-
-#### Step 16: Symlink User-Managed Dotfiles
-
-**What:** Creates three symlinks:
-
-```
-~/dotfiles/wezterm/wezterm.lua  →  ~/.config/wezterm/wezterm.lua
-~/dotfiles/tmux/tmux.conf       →  ~/.config/tmux/tmux.conf
-~/dotfiles/scripts/sessionizer  →  ~/.local/bin/sessionizer
-```
-
-**Why symlinks rather than copies:** A symlink means editing `~/dotfiles/wezterm/wezterm.lua` _is_ editing `~/.config/wezterm/wezterm.lua`. The file has one location, not two. The dotfiles repository is always in sync with what WezTerm and tmux are actually reading.
-
-**Why `~/.local/bin/` for the sessionizer:** `~/.local/bin/` is the standard per-user executable directory on Ubuntu. Home Manager adds it to `$PATH` via `home.nix`. Once the symlink exists, `sessionizer` is available as a command from anywhere.
-
-**Idempotency:** Uses `ln -sf` (force), which overwrites an existing symlink with the correct target. Safe to re-run.
-
-**Correct completion:**
-
-```bash
-readlink ~/.config/wezterm/wezterm.lua
-```
-
-Expected output:
-
-```
-/home/yourusername/dotfiles/wezterm/wezterm.lua
-```
-
 ---
 
 ### 2.5 Post-Bootstrap Manual Steps
@@ -1619,7 +1638,7 @@ Three steps cannot be automated and must be completed immediately after the boot
 
 #### Manual Step 1: Re-login for Docker Group
 
-The Docker group membership added in step 7 takes effect at a session boundary — when you start a new login session. Until you re-login, `docker ps` returns:
+The Docker group membership added in step 8 takes effect at a session boundary — when you start a new login session. Until you re-login, `docker ps` returns:
 
 ```
 permission denied while trying to connect to the Docker daemon socket
@@ -1769,7 +1788,7 @@ Expected output: empty container list (no permission error). If you see a permis
 docker compose version
 ```
 
-Expected output: `Docker Compose version v2.x.x`. If `docker compose` is not found (only `docker-compose` with a hyphen), the Docker Compose plugin was not installed — re-run step 7 of the bootstrap or install it manually: `sudo apt-get install -y docker-compose-plugin`.
+Expected output: `Docker Compose version v2.x.x`. If `docker compose` is not found (only `docker-compose` with a hyphen), the Docker Compose plugin was not installed — re-run step 6 of the bootstrap or install it manually: `sudo apt-get install -y docker-compose-plugin`.
 
 #### GitHub CLI
 
@@ -1837,7 +1856,7 @@ All of these should return version strings. Any that return `command not found` 
 
 #### Commit `flake.lock` to Your Dotfiles Repository
 
-The bootstrap generated `~/dotfiles/flake.lock` during step 4 (the Home Manager apply step). This file did not exist when you created the repository in Part 2, so it was not part of the initial commit. It must be committed now.
+The bootstrap generated `~/dotfiles/flake.lock` during step 5 (the Home Manager apply step). This file did not exist when you created the repository in Part 2, so it was not part of the initial commit. It must be committed now.
 
 `flake.lock` records the exact Git commit hashes of all Nix inputs (nixpkgs, Home Manager). Without it committed, a second machine running the bootstrap will resolve inputs against whatever is current at that moment — potentially different package versions from what you have now.
 
@@ -2137,7 +2156,7 @@ _What you give up:_
 
 The following covers every setting in the base configuration with an explanation of what it does and why it is set this way. This is not the complete file — it is an annotated walkthrough of the decisions. The complete copy-paste file is in Appendix F.
 
-Place the config at `~/dotfiles/wezterm/wezterm.lua`. The bootstrap symlinks it to `~/.config/wezterm/wezterm.lua`.
+Place the config at `~/dotfiles/wezterm/wezterm.lua`. `setup-desktop.sh` symlinks it to `~/.config/wezterm/wezterm.lua`.
 
 #### The Required Preamble
 
@@ -2158,7 +2177,7 @@ font = wezterm.font("JetBrainsMono Nerd Font"),
 font_size = 13,
 ```
 
-`wezterm.font()` selects the font by family name exactly as registered in the system font database. The bootstrap installed JetBrainsMono Nerd Font in step 6 (§3.3). If you see boxes (`□`) instead of icons, the font name here does not match the installed family name — verify with `fc-list | grep JetBrains`.
+`wezterm.font()` selects the font by family name exactly as registered in the system font database. JetBrainsMono Nerd Font is installed by Home Manager (`nerd-fonts.jetbrains-mono` in `home.packages`). If you see boxes (`□`) instead of icons, the font name here does not match the installed family name — verify with `fc-list | grep JetBrains`.
 
 `font_size = 13` is a reasonable baseline for a 1080p monitor. On a 4K display at 100% scaling, 13 will appear very small — 15–16 is more comfortable. On a HiDPI laptop at 200% scaling, 13 renders at an effective 26px and may feel large — 11–12 is more comfortable. Change this freely; it reloads instantly.
 
@@ -2168,9 +2187,9 @@ font_size = 13,
 color_scheme = "Catppuccin Mocha",
 ```
 
-Catppuccin Mocha is set here and must be set to the same theme in `tmux.conf` (via the Catppuccin TPM plugin). This is not a preference — it is a requirement for colour consistency at pane borders. WezTerm renders the background behind everything; tmux renders its status bar and pane borders on top. If their background colours differ, visible seams appear at every pane border. When both use Catppuccin Mocha, the pane borders are invisible against the background.
+Catppuccin Mocha is set here and must be set to the same theme in `tmux.conf` (via the Catppuccin tmux plugin). This is not a preference — it is a requirement for colour consistency at pane borders. WezTerm renders the background behind everything; tmux renders its status bar and pane borders on top. If their background colours differ, visible seams appear at every pane border. When both use Catppuccin Mocha, the pane borders are invisible against the background.
 
-To use a different colour scheme: change it in both `wezterm.lua` _and_ `tmux.conf` together, or accept visible seams. The Catppuccin TPM plugin (installed by the bootstrap) supports multiple flavours: Mocha, Macchiato, Frappe, Latte. See §3.7 for the colour consistency mechanism in detail.
+To use a different colour scheme: change it in both `wezterm.lua` _and_ `tmux.conf` together, or accept visible seams. The Catppuccin tmux plugin (managed by Home Manager via `programs.tmux.plugins`) supports multiple flavours: Mocha, Macchiato, Frappe, Latte. See §3.7 for the colour consistency mechanism in detail.
 
 #### TERM Setting
 
@@ -2286,7 +2305,7 @@ The colour-bleed problem deserves a concrete explanation because it is easy to e
 
 WezTerm renders the terminal background. tmux renders its status bar and pane borders as text drawn _on top of_ that background. They are separate rendering layers with no direct coordination. If WezTerm's background colour is `#1e1e2e` (Catppuccin Mocha base) and tmux's status bar background is `#1e1e2e` (also Catppuccin Mocha), they match perfectly and the border is invisible. If they differ by a single hex digit, a visible seam runs along every pane border.
 
-The solution used by this stack: both WezTerm and tmux use the Catppuccin Mocha theme from the same source. WezTerm uses the built-in `"Catppuccin Mocha"` colour scheme. tmux uses the Catppuccin TPM plugin (installed headlessly by the bootstrap in step 11). Both reference the same colour values, so the seams disappear.
+The solution used by this stack: both WezTerm and tmux use the Catppuccin Mocha theme from the same source. WezTerm uses the built-in `"Catppuccin Mocha"` colour scheme. tmux uses the Catppuccin plugin (managed by Home Manager via `programs.tmux.plugins`). Both reference the same colour values, so the seams disappear.
 
 **To verify:** Inside a tmux session, the pane borders should be effectively invisible — only distinguishable from the background because the terminal content stops at the border. If you can clearly see a bright line between panes, the themes are mismatched.
 
@@ -2337,7 +2356,7 @@ _Resolution:_
 fc-list | grep JetBrains
 ```
 
-If this returns nothing, the font installation in bootstrap step 6 failed. Re-run: download JetBrainsMono Nerd Font from `nerdfonts.com`, unzip to `~/.local/share/fonts/NerdFonts/`, run `fc-cache -fv`.
+If this returns nothing, the font installation by Home Manager failed. Re-run `home-manager switch` to retry, or manually download JetBrainsMono Nerd Font from `nerdfonts.com`, unzip to `~/.local/share/fonts/`, and run `fc-cache -fv`.
 
 If the font is installed but boxes still appear, the `font` setting in `wezterm.lua` does not match the installed family name. Use the exact family name from `fc-list` output.
 
@@ -2579,7 +2598,7 @@ set -g window-status-current-format "#[fg=#cba6f7,bold] #I:#W "
 
 The Catppuccin Mocha hex values here (`#1e1e2e`, `#cdd6f4`, `#89b4fa`, etc.) must match WezTerm's colour scheme to prevent colour seams at pane borders (§4.7). These values are from the Catppuccin Mocha palette. If you switch to a different colour scheme, update both this block and WezTerm's `color_scheme` setting together.
 
-The status bar shows: session name on the left, window list in the centre, time on the right. This is the minimum useful information. The Catppuccin TPM plugin (§4.7) overrides this with a more polished version while keeping the same colour values.
+The status bar shows: session name on the left, window list in the centre, time on the right. This is the minimum useful information. The Catppuccin tmux plugin (§4.7) overrides this with a more polished version while keeping the same colour values.
 
 #### Pane Navigation
 
@@ -2648,9 +2667,9 @@ The practical guidance: use mouse clicks for pane focus switching and pane resiz
 
 ---
 
-### 4.7 Plugin Management with TPM
+### 4.7 Plugin Management
 
-TPM (tmux Plugin Manager) was installed headlessly by the bootstrap in step 11 (§4.3). Three plugins were installed. This section explains each plugin's role and how TPM itself works. The full rationale for each plugin is deferred to where it is exercised in the guide.
+Tmux plugins are managed declaratively by Home Manager (`programs.tmux.plugins` in `home.nix`). They are pinned via `flake.lock` and installed when you run `home-manager switch`. No TPM (tmux Plugin Manager) is used. Three plugins are configured. This section explains each plugin's role. The full rationale for each plugin is deferred to where it is exercised in the guide.
 
 #### The Three Installed Plugins
 
@@ -2664,22 +2683,25 @@ TPM (tmux Plugin Manager) was installed headlessly by the bootstrap in step 11 (
 
 #### Managing Plugins After Setup
 
-The plugin block in `tmux.conf`:
+Plugins are declared in `home.nix`:
 
-```bash
-set -g @plugin 'tmux-plugins/tpm'
-set -g @plugin 'catppuccin/tmux'
-set -g @plugin 'christoomey/vim-tmux-navigator'
-set -g @plugin 'tmux-plugins/tmux-yank'
-
-run '~/.tmux/plugins/tpm/tpm'
+```nix
+programs.tmux = {
+  enable = true;
+  plugins = with pkgs.tmuxPlugins; [
+    catppuccin
+    vim-tmux-navigator
+    yank
+  ];
+  extraConfig = builtins.readFile ../tmux/tmux.conf;
+};
 ```
 
-To add a new plugin: add a `set -g @plugin` line above the `run` line, save `tmux.conf`, reload with `prefix r`, then install with `prefix + I` (uppercase I).
+To add a plugin: add it to the `plugins` list in `home.nix` and run `home-manager switch`. The plugin is pinned at the nixpkgs version in `flake.lock`.
 
-To remove a plugin: delete its `set -g @plugin` line, save, reload with `prefix r`, then clean with `prefix + Alt-u`.
+To remove a plugin: delete it from the `plugins` list and run `home-manager switch`.
 
-To update all plugins: `prefix + U`.
+To update plugins: run `nix flake update` in `~/dotfiles`, then `home-manager switch`. This updates all pinned versions in `flake.lock`.
 
 ---
 
@@ -2777,7 +2799,7 @@ The complete daily-use keybinding table. `prefix` means `C-Space` followed by th
 |`prefix c`|New window|
 |`prefix &`|Kill current window|
 |`prefix x`|Kill current pane|
-|`prefix + U`|Update TPM plugins|
+|`prefix r`|Reload tmux config (after `home-manager switch`)|
 
 **Copy mode keys** (after `prefix [`):
 
@@ -2882,7 +2904,7 @@ _Symptom:_ A thin visible line appears between panes, or the tmux status bar bac
 
 _Cause:_ The Catppuccin colour values in `tmux.conf` do not match WezTerm's `color_scheme`. This can happen if you manually edited the hex colours without updating WezTerm, or if you switched WezTerm themes without updating tmux.
 
-_Resolution:_ Ensure `color_scheme = "Catppuccin Mocha"` in `wezterm.lua` and that the Catppuccin TPM plugin is active in `tmux.conf`. If you are using a custom colour scheme, update both files simultaneously with matching hex values. Full mechanism: §4.7.
+_Resolution:_ Ensure `color_scheme = "Catppuccin Mocha"` in `wezterm.lua` and that the Catppuccin tmux plugin is active (declared in `home.nix` `programs.tmux.plugins`). If you are using a custom colour scheme, update both files simultaneously with matching hex values. Full mechanism: §4.7.
 
 ---
 
@@ -3323,11 +3345,11 @@ If either condition is missing, glyphs do not render. A common failure mode is h
 
 Font installation is a fully automatable sequence of file operations: download a zip, unzip into the correct directory, run `fc-cache`. There is no interactive step, no decision to make, and no variation between machines. Making it a manual step would guarantee it gets skipped at least once — typically on a new machine setup where there are many steps to complete and this one seems minor until the terminal opens and everything looks broken.
 
-The bootstrap handles it in step 6 (§6.3), with two specific properties:
+Home Manager handles this (§6.3), with two specific properties:
 
-**Pinned version.** The download URL references a specific JetBrainsMono Nerd Font release version rather than "latest." This means two machines bootstrapped six months apart install the same font files. An unpinned "latest" URL installs whatever version is current at bootstrap time, which may differ and could theoretically change glyph metrics.
+**Pinned version.** `nerd-fonts.jetbrains-mono` in `home.packages` is resolved against the nixpkgs version pinned by `flake.lock`. This means two machines running `home-manager switch` from the same flake revision install the same font files, regardless of when the switch is run.
 
-**Idempotency.** The bootstrap checks for `~/.local/share/fonts/NerdFonts/` before downloading. On a re-run, the step is skipped if the directory already exists and is non-empty.
+**Idempotency.** `home-manager switch` only rebuilds the font symlink if the derivation output changed. On a re-run with no `flake.lock` changes, this step is a no-op.
 
 If you ever need to verify the font installation manually:
 
@@ -3351,7 +3373,7 @@ fc-cache -fv
 ls ~/.local/share/fonts/NerdFonts/ | grep JetBrains
 ```
 
-If the directory is empty, the bootstrap's download step failed. Download the font manually from `nerdfonts.com`, unzip to `~/.local/share/fonts/NerdFonts/`, and run `fc-cache -fv`.
+If the directory is empty, Home Manager did not install the font. Run `home-manager switch` and check for errors, or download JetBrainsMono Nerd Font manually from `nerdfonts.com`, unzip to `~/.local/share/fonts/`, and run `fc-cache -fv`.
 
 ---
 
@@ -4686,7 +4708,7 @@ Every file in `~/dotfiles/nvim/` with its purpose, who writes it, and whether it
 
 ### 10.4 Installation
 
-The bootstrap staged the LazyVim starter into `~/dotfiles/nvim/` (step 12) and ran the headless plugin sync (step 13). Opening Neovim for the first time should show a fully loaded LazyVim interface with no plugin installation in progress.
+The bootstrap staged the LazyVim starter into `~/dotfiles/nvim/` (step 10) and ran the headless plugin sync (step 11). Opening Neovim for the first time should show a fully loaded LazyVim interface with no plugin installation in progress.
 
 Run `:checkhealth` inside Neovim after first open. Look for:
 
@@ -6175,7 +6197,7 @@ Where Neovim needed a global Home Manager plugin file (`formatting.lua`, `lintin
 
 ### 11.2 Installation
 
-VS Code is installed via the official apt repository by the bootstrap (step 14 in §11.3). The snap package is explicitly not used — the VS Code snap runs in a sandboxed filesystem that cannot access paths under `/nix/store`, which breaks the `mkhl.direnv` extension and prevents devenv binaries from being found.
+VS Code is installed via the official apt repository by `setup-desktop.sh` (Installation Step 5). The snap package is explicitly not used — the VS Code snap runs in a sandboxed filesystem that cannot access paths under `/nix/store`, which breaks the `mkhl.direnv` extension and prevents devenv binaries from being found.
 
 Verify:
 
@@ -6536,91 +6558,115 @@ Save this file as `bootstrap.sh` in the root of your **public** `workstation-scr
 #!/usr/bin/env bash
 # bootstrap.sh
 # Idempotent workstation setup script.
-# Lives in: workstation-scripts/ (PUBLIC repo) — fetched via curl
-# Run with: bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh)
+# Lives in: workstation-scripts/ (PUBLIC repo) – fetched via wget
+# Run with: wget -qO bootstrap.sh https://raw.githubusercontent.com/yourusername/workstation-scripts/main/bootstrap.sh && bash bootstrap.sh
 #
-# What this script does:
-#   1. Installs system dependencies
-#   2. Generates an SSH key and PAUSES for you to register it on GitHub
-#   3. Clones your PRIVATE dotfiles repo via SSH
-#   4. Installs Nix + Home Manager and builds your environment
-#   5. Installs WezTerm, Docker, fonts, tmux plugins, Neovim, VS Code
+# What this script does (headless-safe — no display required):
+#   1.  Installs system dependencies and sets zsh as the login shell
+#   2.  Verifies the SSH key is present and authenticated with GitHub
+#   3.  Clones your PRIVATE dotfiles repo via SSH
+#   4.  Installs Nix (Determinate Systems installer)
+#   5.  Applies Home Manager from your flake (owns git config, tmux plugins,
+#         Nerd Font, and all CLI packages declared in home.nix)
+#   6.  Installs Docker Engine
+#   7.  Verifies GitHub CLI (installed by Home Manager; apt fallback)
+#   8.  Configures gh pager (delta – not manageable via Home Manager)
+#   9.  Installs Gemini CLI + Conductor + Context7 MCP
+#   10. Symlinks user-managed dotfiles (sessionizer)
+#   11. Stages LazyVim starter into dotfiles
+#   12. Runs LazyVim headless plugin sync
 #
-# No manual steps if you pre-generated and registered ~/.ssh/id_ed25519 before
-# running this script (see guide §2.3). If the key does not exist, the script
-# generates it, pauses once for GitHub registration, then continues.
+# GUI-only tools (WezTerm, VS Code, Chrome, ksnip) are installed by setup-desktop.sh.
+# Run setup-desktop.sh after this script if you want a graphical environment.
+#
+# NOTE: git identity, delta pager, aliases, tmux plugins, and JetBrainsMono
+# Nerd Font are managed entirely by Home Manager via home.nix. The bootstrap
+# script does NOT write any git config or install fonts/tmux plugins manually.
+#
+# PREREQUISITE: Generate and register your SSH key on GitHub before running
+# this script. The bootstrap runs fully automatically with no pauses once the
+# key is in place.
 
 set -euo pipefail
 
-# ── Colours ───────────────────────────────────────────────────────────────────
+# Cache sudo credentials up front so subsequent sudo calls don't need a TTY.
+sudo -v
+
+# ── Colours ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
 step() { echo -e "${GREEN}▶ $1${NC}"; }
-warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
-ok()   { echo -e "${GREEN}✓ $1${NC}"; }
+warn()  { echo -e "${YELLOW}⚠ $1${NC}"; }
+ok()    { echo -e "${GREEN}✓ $1${NC}"; }
 
-# ── Variables — substitute these two values before pushing ────────────────────
-GITHUB_USER="yourusername"                              # ← your GitHub username
-DOTFILES_REPO="git@github.com:yourusername/dotfiles.git"  # ← your PRIVATE dotfiles SSH URL
-
+# ── Variables — substitute these two values before pushing ───────────────────
+GITHUB_USER="yourusername"                                  # ← your GitHub username
+DOTFILES_REPO="git@github.com:yourusername/dotfiles.git"   # ← your PRIVATE dotfiles SSH URL
 DOTFILES_DIR="$HOME/dotfiles"
-NERD_FONT_VERSION="v3.2.1"
-NERD_FONT_NAME="JetBrainsMono"
 
 echo -e "${GREEN}🚀 Starting workstation bootstrap...${NC}"
 
-# ── Step 1: System dependencies ───────────────────────────────────────────────
-step "Installing system dependencies (git, curl, openssh-client, flatpak)"
+# ── Pre-flight: create user-owned XDG directories ────────────────────────────
+# Must run before any sudo call. Some sudo-invoked tools (apt, gpg) implicitly
+# create ~/.config/ owned by root, which causes "Permission denied" errors in
+# any later user-space write to that tree.
+step "Pre-creating user-owned directories"
+mkdir -p \
+    "$HOME/.config/git" \
+    "$HOME/.config/tmux" \
+    "$HOME/.local/bin" \
+    "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+ok "User directories ready"
+
+# ── Step 1: System dependencies ──────────────────────────────────────────────
+step "Installing system dependencies (git, curl, openssh-client, zsh)"
 sudo apt-get update -qq
-sudo apt-get install -y git curl openssh-client flatpak xdg-desktop-portal-gtk
+sudo apt-get install -y git curl openssh-client zsh
 ok "System dependencies installed"
 
-# ── Step 2: Verify SSH key for GitHub ─────────────────────────────────────────
-# The dotfiles repo is PRIVATE — an SSH key registered on GitHub is required
-# before the bootstrap can clone it.
-# Pre-generate and register the key before running this script (see guide §2.3).
-# If the key does not exist yet, the script generates it now and pauses once
-# for registration — then continues automatically.
-step "Setting up SSH key for GitHub"
-if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
-    ssh-keygen -t ed25519 -C "${GITHUB_USER}@workstation-$(hostname)" -f "$HOME/.ssh/id_ed25519" -N ""
-    ok "SSH key generated"
-    echo ""
-    echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
-    echo -e "${YELLOW}  ACTION REQUIRED — Register your SSH key on GitHub${NC}"
-    echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "Your public key:"
-    echo ""
-    cat "$HOME/.ssh/id_ed25519.pub"
-    echo ""
-    echo "Steps:"
-    echo "  1. Copy the key above (the entire line starting with ssh-ed25519)"
-    echo "  2. Open https://github.com/settings/keys in your browser"
-    echo "  3. Click 'New SSH key'"
-    echo "  4. Paste the key and save"
-    echo ""
-    read -rp "Press Enter once the key is registered on GitHub... "
-    echo ""
+# ── Step 2: Set zsh as login shell ───────────────────────────────────────────
+step "Setting zsh as login shell"
+if [ "$(getent passwd "$USER" | cut -d: -f7)" != "/usr/bin/zsh" ]; then
+    sudo usermod -s /usr/bin/zsh "$USER"
+    ok "Login shell changed to zsh (takes effect on next login)"
 else
-    ok "SSH key already exists — skipping generation"
+    ok "Login shell already set to zsh – skipping"
 fi
 
-# Verify the key works before attempting to clone.
-# Note: ssh -T git@github.com always exits with code 1 (GitHub denies shell access),
-# so we capture output separately to avoid pipefail treating it as a failure.
-SSH_OUTPUT=$(ssh -T git@github.com 2>&1 || true)
-if ! echo "$SSH_OUTPUT" | grep -q "successfully authenticated"; then
-    warn "SSH authentication test failed. Verify the key is registered and try again."
-    warn "You can re-run this script after registering the key — it is idempotent."
+# ── Step 2: Verify SSH key ────────────────────────────────────────────────────
+# The key must exist and be registered on GitHub before this script is run.
+step "Verifying SSH key for GitHub"
+if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
+    echo -e "${RED}✗ SSH key not found at ~/.ssh/id_ed25519${NC}"
+    echo ""
+    echo "Generate and register an SSH key before running bootstrap:"
+    echo "  ssh-keygen -t ed25519 -C \"${GITHUB_USER}@workstation\" -f ~/.ssh/id_ed25519 -N \"\""
+    echo "  cat ~/.ssh/id_ed25519.pub"
+    echo "Paste the key at https://github.com/settings/keys, then verify:"
+    echo "  ssh-keyscan github.com >> ~/.ssh/known_hosts"
+    echo "  ssh -T git@github.com"
     exit 1
 fi
-ok "SSH key verified — GitHub authentication successful"
 
-# ── Step 3: Clone dotfiles ─────────────────────────────────────────────────────
+# Pre-seed known_hosts so ssh never prompts interactively (idempotent).
+ssh-keyscan github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+
+# ssh -T always exits 1 (GitHub denies shell access); capture stderr too.
+SSH_OUTPUT=$(ssh -T git@github.com 2>&1 || true)
+if ! echo "$SSH_OUTPUT" | grep -q "successfully authenticated"; then
+    echo -e "${RED}✗ SSH authentication to GitHub failed${NC}"
+    echo ""
+    echo "Ensure your public key is registered at https://github.com/settings/keys"
+    echo "then verify with: ssh -T git@github.com"
+    exit 1
+fi
+ok "SSH key verified – GitHub authentication successful"
+
+# ── Step 3: Clone dotfiles ────────────────────────────────────────────────────
 step "Cloning private dotfiles repository"
 if [ ! -d "$DOTFILES_DIR" ]; then
     git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
@@ -6628,78 +6674,48 @@ if [ ! -d "$DOTFILES_DIR" ]; then
 else
     git -C "$DOTFILES_DIR" fetch origin main
     git -C "$DOTFILES_DIR" reset --hard origin/main
-    ok "Dotfiles already present — reset to origin/main"
+    ok "Dotfiles already present – reset to origin/main"
 fi
 cd "$DOTFILES_DIR"
 
-# ── Step 3: Install Nix (Determinate Systems) ─────────────────────────────────
+# ── Step 4: Install Nix (Determinate Systems) ────────────────────────────────
 step "Installing Nix"
 if ! command -v nix &>/dev/null; then
     curl --proto '=https' --tlsv1.2 -sSf -L \
         https://install.determinate.systems/nix \
         | sh -s -- install --no-confirm
-    # Source Nix profile for the remainder of this script session
+    # Source Nix profile for the remainder of this script session.
     if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
         # shellcheck disable=SC1091
         . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
     fi
     ok "Nix installed"
 else
-    ok "Nix already installed — skipping"
+    ok "Nix already installed – skipping"
 fi
 
-# ── Step 4: Apply Home Manager via Flake ──────────────────────────────────────
+# ── Step 5: Apply Home Manager via Flake ──────────────────────────────────────
+# Home Manager owns: git identity, delta config, git aliases, zsh, starship,
+# direnv, fzf, tmux plugins, JetBrainsMono Nerd Font, and all CLI packages
+# declared in home.nix. Do NOT write git config anywhere else in this script.
 step "Applying Home Manager configuration"
-# Use the fully qualified GitHub URI to bypass local registry lookup failures
-# on fresh machines that have not yet populated the Nix registry.
+# Fully qualified GitHub URI bypasses local registry lookup failures on fresh
+# machines that have not yet populated the Nix registry.
 nix run github:nix-community/home-manager -- \
-    switch --flake "${DOTFILES_DIR}#${GITHUB_USER}"
+    switch --flake "$DOTFILES_DIR#${GITHUB_USER}"
 ok "Home Manager applied"
 
-# Source the new profile so subsequent steps find Home Manager-installed binaries
+# Source the new profile so subsequent steps find HM-installed binaries.
 # shellcheck disable=SC1090
 . "$HOME/.nix-profile/etc/profile.d/nix.sh" 2>/dev/null || true
 
-# ── Step 5: Install WezTerm via Flatpak ───────────────────────────────────────
-step "Installing WezTerm"
-if ! command -v wezterm &>/dev/null && ! flatpak list --user 2>/dev/null | grep -q wezterm; then
-    flatpak remote-add --user --if-not-exists flathub \
-        https://flathub.org/repo/flathub.flatpakrepo
-    flatpak install --user -y flathub org.wezfurlong.wezterm
-    # Expose the Flatpak binary on PATH via a wrapper
-    mkdir -p "$HOME/.local/bin"
-    ln -sf "$HOME/.local/share/flatpak/exports/bin/org.wezfurlong.wezterm" \
-        "$HOME/.local/bin/wezterm"
-    ok "WezTerm installed via Flatpak (user install)"
-else
-    ok "WezTerm already installed — skipping"
-fi
-
-# ── Step 6: Install JetBrainsMono Nerd Font ───────────────────────────────────
-step "Installing JetBrainsMono Nerd Font"
-FONT_DIR="$HOME/.local/share/fonts/NerdFonts"
-if [ ! -d "$FONT_DIR" ] || [ -z "$(ls -A "$FONT_DIR" 2>/dev/null)" ]; then
-    mkdir -p "$FONT_DIR"
-    FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_FONT_VERSION}/${NERD_FONT_NAME}.zip"
-    FONT_ZIP="/tmp/${NERD_FONT_NAME}.zip"
-    curl -fsSL "$FONT_URL" -o "$FONT_ZIP"
-    unzip -o "$FONT_ZIP" -d "$FONT_DIR"
-    rm -f "$FONT_ZIP"
-    fc-cache -fv >/dev/null 2>&1
-    ok "JetBrainsMono Nerd Font installed"
-else
-    ok "Nerd Font already installed — skipping"
-fi
-
-# ── Step 7: Install Docker Engine ─────────────────────────────────────────────
+# ── Step 6: Install Docker Engine ────────────────────────────────────────────
 step "Installing Docker Engine"
 if ! command -v docker &>/dev/null; then
-    # Add Docker's official apt repository
     sudo apt-get install -y ca-certificates gnupg
     sudo install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
         | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    sudo chmod a+r /etc/apt/keyrings/docker.gpg
     echo "deb [arch=$(dpkg --print-architecture) \
 signed-by=/etc/apt/keyrings/docker.gpg] \
 https://download.docker.com/linux/ubuntu \
@@ -6711,47 +6727,15 @@ $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
     sudo usermod -aG docker "$USER"
     ok "Docker Engine installed"
 else
-    ok "Docker already installed — skipping"
+    ok "Docker already installed – skipping"
 fi
 
-# ── Step 8: Configure git identity, delta, and aliases ────────────────────────
-step "Configuring git"
-if [ -z "$(git config --global user.name 2>/dev/null)" ]; then
-    read -rp "  Git user.name: " GIT_NAME
-    git config --global user.name "$GIT_NAME"
-fi
-if [ -z "$(git config --global user.email 2>/dev/null)" ]; then
-    read -rp "  Git user.email: " GIT_EMAIL
-    git config --global user.email "$GIT_EMAIL"
-fi
-
-# Delta as pager for git AND gh (two separate settings — both required)
-if command -v delta &>/dev/null || [ -f "$HOME/.nix-profile/bin/delta" ]; then
-    DELTA_BIN="${HOME}/.nix-profile/bin/delta"
-    [ -x "$DELTA_BIN" ] || DELTA_BIN="delta"
-    git config --global core.pager "$DELTA_BIN"
-    git config --global delta.side-by-side true
-    git config --global delta.line-numbers true
-    git config --global delta.navigate true
-    if command -v gh &>/dev/null || [ -f "$HOME/.nix-profile/bin/gh" ]; then
-        "${HOME}/.nix-profile/bin/gh" config set pager "$DELTA_BIN" 2>/dev/null || true
-    fi
-fi
-
-# Standard git aliases used throughout Dev Workflows
-git config --global alias.sw    "switch"
-git config --global alias.co    "checkout -b"
-git config --global alias.st    "status --short"
-git config --global alias.pushf "push --force-with-lease"
-git config --global alias.lg    "log --oneline --graph --decorate --all"
-ok "Git configured"
-
-# ── Step 9: Verify GitHub CLI (installed by Home Manager; apt is fallback) ────
-# gh is installed by Home Manager in step 4; this step ensures it is available
-# even if the Home Manager PATH has not fully propagated yet.
+# ── Step 7: Verify GitHub CLI ─────────────────────────────────────────────────
+# gh is declared in home.nix packages; apt is a fallback for first-run timing
+# issues where HM hasn't sourced yet.
 step "Verifying GitHub CLI"
 if ! command -v gh &>/dev/null && [ ! -f "$HOME/.nix-profile/bin/gh" ]; then
-    warn "gh not found — installing via apt as fallback"
+    warn "gh not found – installing via apt as fallback"
     curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
     echo "deb [arch=$(dpkg --print-architecture) \
@@ -6763,16 +6747,26 @@ https://cli.github.com/packages stable main" \
 fi
 ok "GitHub CLI available"
 
-# ── Step 10: Install Gemini CLI, Conductor, Context7 MCP ──────────────────────
+# ── Step 8: Configure gh pager ───────────────────────────────────────────────
+# git pager (delta) is managed by Home Manager via programs.git.settings.
+# The gh pager is a separate setting not exposed by Home Manager – set it here.
+step "Configuring gh pager"
+GH_BIN="${HOME}/.nix-profile/bin/gh"
+DELTA_BIN="${HOME}/.nix-profile/bin/delta"
+if [ -x "$GH_BIN" ] && [ -x "$DELTA_BIN" ]; then
+    "$GH_BIN" config set pager "$DELTA_BIN" 2>/dev/null || true
+    ok "gh pager set to delta"
+else
+    ok "gh or delta not in Nix profile yet – skipping gh pager config"
+fi
+
+# ── Step 9: Install Gemini CLI + extensions ──────────────────────────────────
 step "Installing Gemini CLI and extensions"
 if ! command -v gemini &>/dev/null; then
-    # npm is provided by Home Manager via home.nix packages (pkgs.nodejs_22 — global npm provider)
-    # pkgs.nodejs_24 in devenv.nix is project-scoped and not available here
     NPM_BIN="${HOME}/.nix-profile/bin/npm"
     if [ -x "$NPM_BIN" ]; then
-        # Install to ~/.local so npm doesn't try to write into the read-only /nix/store
+        # Install to ~/.local so npm doesn't write into the read-only /nix/store.
         NPM_PREFIX="$HOME/.local"
-        mkdir -p "$NPM_PREFIX"
         "$NPM_BIN" install -g --prefix "$NPM_PREFIX" @google/gemini-cli
         export PATH="$NPM_PREFIX/bin:$PATH"
         if command -v gemini &>/dev/null; then
@@ -6781,124 +6775,61 @@ if ! command -v gemini &>/dev/null; then
         fi
         ok "Gemini CLI installed"
     else
-        warn "npm not found — skipping Gemini CLI install"
-        warn "Add pkgs.nodejs_22 (global npm provider) to home.nix packages and re-run bootstrap"
-        warn "Note: pkgs.nodejs_24 in devenv.nix is project-scoped and does not provide a global npm"
+        warn "npm not found – skipping Gemini CLI install"
+        warn "Ensure pkgs.nodejs_22 is in home.nix packages and re-run bootstrap"
     fi
 else
-    ok "Gemini CLI already installed — skipping"
+    ok "Gemini CLI already installed – skipping"
 fi
 
-# ── Step 11: Install tmux Plugin Manager and plugins headlessly ───────────────
-step "Installing tmux Plugin Manager (TPM) and plugins"
-TPM_DIR="$HOME/.tmux/plugins/tpm"
-if [ ! -d "$TPM_DIR" ]; then
-    git clone https://github.com/tmux-plugins/tpm "$TPM_DIR"
-    ok "TPM cloned"
-else
-    ok "TPM already installed — skipping clone"
+# ── Step 10: Symlink user-managed dotfiles ───────────────────────────────────
+# sessionizer is a custom script not managed by Home Manager.
+# tmux.conf is generated by Home Manager (programs.tmux.extraConfig) — no symlink needed.
+# wezterm.lua is symlinked by setup-desktop.sh (WezTerm is desktop-only).
+step "Symlinking user-managed dotfiles"
+if [ -f "$DOTFILES_DIR/scripts/sessionizer" ]; then
+    chmod +x "$DOTFILES_DIR/scripts/sessionizer"
+    ln -sf "$DOTFILES_DIR/scripts/sessionizer" "$HOME/.local/bin/sessionizer"
 fi
-# Run headless plugin install — no interactive tmux session required
-if [ -f "${DOTFILES_DIR}/tmux/tmux.conf" ]; then
-    TMUX_PLUGIN_MANAGER_PATH="${HOME}/.tmux/plugins" \
-        "${TPM_DIR}/scripts/install_plugins.sh" >/dev/null 2>&1 || true
-    ok "TPM plugins installed headlessly"
-else
-    warn "tmux/tmux.conf not found in dotfiles — skipping TPM plugin install"
-    warn "Populate tmux/tmux.conf and re-run bootstrap, or press prefix+I in tmux"
-fi
+ok "Dotfiles symlinked (sessionizer; tmux managed by HM, wezterm by setup-desktop.sh)"
 
-# ── Step 12: Stage LazyVim starter into dotfiles ──────────────────────────────
+# ── Step 11: Stage LazyVim starter into dotfiles ─────────────────────────────
 step "Staging LazyVim starter"
-NVIM_DIR="${DOTFILES_DIR}/nvim"
-if [ ! -f "${NVIM_DIR}/init.lua" ] || [ ! -s "${NVIM_DIR}/init.lua" ]; then
+NVIM_DIR="$DOTFILES_DIR/nvim"
+if [ ! -s "$NVIM_DIR/init.lua" ]; then
     git clone --depth 1 https://github.com/LazyVim/starter /tmp/lazyvim-starter
     mkdir -p "$NVIM_DIR"
     cp -r /tmp/lazyvim-starter/. "$NVIM_DIR/"
-    rm -rf "${NVIM_DIR}/.git" /tmp/lazyvim-starter
+    rm -rf "$NVIM_DIR/.git" /tmp/lazyvim-starter
     ok "LazyVim starter staged into dotfiles/nvim/"
 else
-    ok "LazyVim already staged — skipping"
+    ok "LazyVim already staged – skipping"
 fi
 
-# ── Step 13: Run LazyVim headless plugin sync ─────────────────────────────────
+# ── Step 12: Run LazyVim headless plugin sync ────────────────────────────────
 step "Running LazyVim headless plugin sync"
 NVIM_BIN="${HOME}/.nix-profile/bin/nvim"
 if [ -x "$NVIM_BIN" ]; then
     "$NVIM_BIN" --headless "+Lazy! sync" +qa 2>/dev/null || true
     ok "LazyVim plugins synced headlessly"
 else
-    warn "Neovim not found in Nix profile — skipping headless sync"
+    warn "Neovim not found in Nix profile – skipping headless sync"
     warn "Run ':Lazy sync' manually on first Neovim open"
 fi
 
-# ── Step 14: Install VS Code via apt repository ───────────────────────────────
-step "Installing VS Code"
-if ! command -v code &>/dev/null; then
-    # apt repository — NOT snap (snap sandboxing blocks /nix/store access)
-    wget -qO- https://packages.microsoft.com/keys/microsoft.asc \
-        | gpg --dearmor \
-        | sudo tee /etc/apt/keyrings/packages.microsoft.gpg >/dev/null
-    echo "deb [arch=amd64,arm64,armhf \
-signed-by=/etc/apt/keyrings/packages.microsoft.gpg] \
-https://packages.microsoft.com/repos/code stable main" \
-        | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null
-    sudo apt-get update -qq
-    sudo apt-get install -y code
-    ok "VS Code installed via apt"
-else
-    ok "VS Code already installed — skipping"
-fi
-
-# ── Step 15: Install VS Code extensions ──────────────────────────────────────
-step "Installing VS Code extensions"
-EXTENSIONS_FILE="${DOTFILES_DIR}/vscode/extensions.txt"
-if [ -f "$EXTENSIONS_FILE" ] && command -v code &>/dev/null; then
-    while IFS= read -r ext || [ -n "$ext" ]; do
-        # Skip blank lines and comments
-        [[ -z "$ext" || "$ext" == \#* ]] && continue
-        code --install-extension "$ext" --force >/dev/null 2>&1 || \
-            warn "Failed to install extension: $ext"
-    done < "$EXTENSIONS_FILE"
-    ok "VS Code extensions installed"
-else
-    warn "vscode/extensions.txt not found or code not on PATH — skipping extensions"
-fi
-
-# ── Step 16: Symlink user-managed dotfiles ────────────────────────────────────
-step "Symlinking user-managed dotfiles"
-mkdir -p "$HOME/.config/wezterm" "$HOME/.config/tmux" "$HOME/.local/bin"
-
-# WezTerm config
-ln -sf "${DOTFILES_DIR}/wezterm/wezterm.lua" "$HOME/.config/wezterm/wezterm.lua"
-
-# tmux config
-ln -sf "${DOTFILES_DIR}/tmux/tmux.conf" "$HOME/.config/tmux/tmux.conf"
-
-# Sessionizer script
-if [ -f "${DOTFILES_DIR}/scripts/sessionizer" ]; then
-    chmod +x "${DOTFILES_DIR}/scripts/sessionizer"
-    ln -sf "${DOTFILES_DIR}/scripts/sessionizer" "$HOME/.local/bin/sessionizer"
-fi
-
-ok "Dotfiles symlinked"
-
-# ── Complete ───────────────────────────────────────────────────────────────────
+# ── Complete ──────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}✅ Bootstrap complete!${NC}"
+echo -e "${GREEN}✔ Bootstrap complete!${NC}"
 echo ""
 echo -e "${YELLOW}Manual steps required before first use:${NC}"
-echo "  1. Log out and back in (activates Docker group membership)"
-echo "  2. gh auth login    (requires browser OAuth)"
+echo "  1. Log out and back in (activates Docker group membership and zsh)"
+echo "  2. gh auth login   (requires browser OAuth)"
 echo "  3. gemini auth login (requires browser OAuth)"
 echo "  4. Verify SSH remote: cd ~/dotfiles && git remote -v"
 echo "     (should show: git@github.com:${GITHUB_USER}/dotfiles.git)"
 echo ""
-echo -e "${GREEN}The SSH key generated during the bootstrap is at:${NC}"
-echo "  ~/.ssh/id_ed25519.pub"
-echo ""
-echo "Back up your SSH private key (~/.ssh/id_ed25519) to a secure location."
-echo "It cannot be regenerated from the dotfiles repository."
+echo "Back up your SSH private key to a secure location:"
+echo "  ~/.ssh/id_ed25519  (cannot be regenerated from dotfiles)"
 echo ""
 echo "Then verify the installation with the checklist in §2.6"
 ```
@@ -7025,7 +6956,17 @@ whoami
 
     # ── Nix utilities ────────────
     nixpkgs-fmt # Nix file formatter
+
+    # ── Fonts ────────────────────
+    # Pinned via flake.lock; replaces the manual curl/unzip step.
+    nerd-fonts.jetbrains-mono
   ];
+
+  # ── Default editor ──────────────────────────────────────────────────────────
+  home.sessionVariables = {
+    EDITOR = "nvim";
+    VISUAL = "nvim";
+  };
 
   # ── Neovim config: mutable symlink outside /nix/store ──────────────────────
   # LazyVim writes lazy-lock.json at runtime — it needs a mutable directory.
@@ -7145,11 +7086,28 @@ whoami
     enableZshIntegration = true;
   };
 
+  # ── tmux: declarative plugin management ─────────────────────────────────────
+  # Plugins are pinned via flake.lock — replaces TPM (tmux-plugins/tpm).
+  # extraConfig inlines tmux/tmux.conf; HM appends plugin run-shell lines after it.
+  programs.tmux = {
+    enable = true;
+    plugins = with pkgs.tmuxPlugins; [
+      catppuccin
+      vim-tmux-navigator
+      yank
+    ];
+    extraConfig = builtins.readFile ../tmux/tmux.conf;
+  };
+
   # ── git: global config ──────────────────────────────────────────────────────
   programs.git = {
     enable = true;
-    # user.name and user.email are set interactively by the bootstrap script
+    # user.name and user.email are declared here — bootstrap does NOT write git config
     settings = {
+      user = {
+        name  = "yourusername";             # ← substitute your name
+        email = "you@example.com";          # ← substitute your email
+      };
       core.pager    = "delta";
       delta = {
         side-by-side  = true;
@@ -7379,7 +7337,7 @@ volumes:
 
 ## Appendix E: Complete `tmux.conf`
 
-Complete annotated configuration. Save to `~/dotfiles/tmux/tmux.conf`. The bootstrap symlinks it to `~/.config/tmux/tmux.conf`. Reload with `prefix r` after any change.
+Complete annotated configuration. Save to `~/dotfiles/tmux/tmux.conf`. Home Manager generates `~/.config/tmux/tmux.conf` from this file via `programs.tmux.extraConfig`. Reload with `prefix r` after any `home-manager switch`.
 
 ```bash
 # ~/dotfiles/tmux/tmux.conf
@@ -7438,7 +7396,7 @@ set -g set-clipboard on
 # ── Status bar ───────────────────────────────────────────────────────────────
 # Catppuccin Mocha colours — must match WezTerm's color_scheme to prevent
 # visible seams at pane borders. See §11.7.
-# The Catppuccin TPM plugin (§11.7) will override most of this with a
+# The Catppuccin tmux plugin (§4.7) will override most of this with a
 # more polished version — these values serve as the fallback.
 set -g status-position bottom
 set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
@@ -7494,25 +7452,17 @@ bind -T copy-mode-vi C-v send-keys -X rectangle-toggle
 # ── Config reload ─────────────────────────────────────────────────────────────
 bind r source-file ~/.config/tmux/tmux.conf \; display-message "Config reloaded"
 
-# ── TPM plugins ───────────────────────────────────────────────────────────────
-# The bootstrap installs these headlessly via install_plugins.sh.
-# To add a plugin: add set -g @plugin line, reload with prefix r, then prefix+I.
-# tmux-resurrect and tmux-continuum are intentionally excluded —
-# they conflict with the declarative sessionizer model (§11.7).
-set -g @plugin 'tmux-plugins/tpm'
-set -g @plugin 'catppuccin/tmux'
-set -g @plugin 'christoomey/vim-tmux-navigator'
-set -g @plugin 'tmux-plugins/tmux-yank'
-
-# TPM entry point — must be the last line in this file
-run '~/.tmux/plugins/tpm/tpm'
+# ── Plugins ───────────────────────────────────────────────────────────────────
+# Plugins are declared in home.nix (programs.tmux.plugins) and pinned via
+# flake.lock. Home Manager appends the plugin run-shell lines after this file.
+# Do not add TPM or plugin declarations here.
 ```
 
 ---
 
 ## Appendix F: Complete `wezterm.lua`
 
-Complete annotated configuration. Save to `~/dotfiles/wezterm/wezterm.lua`. The bootstrap symlinks it to `~/.config/wezterm/wezterm.lua`. Reload with `SUPER+SHIFT+R` after any change.
+Complete annotated configuration. Save to `~/dotfiles/wezterm/wezterm.lua`. `setup-desktop.sh` symlinks it to `~/.config/wezterm/wezterm.lua`. Reload with `SUPER+SHIFT+R` after any change.
 
 ```lua
 -- ~/dotfiles/wezterm/wezterm.lua
@@ -7521,11 +7471,19 @@ local wezterm = require 'wezterm'
 return {
 
   -- ── Font ────────────────────────────────────────────────────────────────────
-  -- JetBrainsMono Nerd Font: installed by the bootstrap (§11.3 step 6).
+  -- Primary: JetBrainsMono Nerd Font (installed by Home Manager: nerd-fonts.jetbrains-mono).
   -- Nerd Font required for Powerline symbols, file icons, git branch indicators.
-  -- If you see boxes (□) instead of icons, verify the font name with:
+  -- Fallbacks: Noto Sans Symbols 2 and Noto Sans Symbols cover the Miscellaneous
+  -- Technical Unicode block (U+2300–U+23FF), including U+23F5 (⏵) used by the
+  -- Catppuccin tmux theme. Without the fallback, WezTerm logs glyph warnings.
+  -- Noto fonts are installed by setup-desktop.sh: apt install fonts-noto fonts-noto-core
+  -- If you see boxes (□) instead of icons, verify the primary font name with:
   --   fc-list | grep JetBrains
-  font      = wezterm.font("JetBrainsMono Nerd Font"),
+  font = wezterm.font_with_fallback({
+    'JetBrainsMono Nerd Font',
+    'Noto Sans Symbols 2',  -- Miscellaneous Technical + broader Unicode coverage
+    'Noto Sans Symbols',    -- additional symbol fallback
+  }),
   font_size = 13,   -- Adjust for your monitor DPI: 4K external → 15-16, laptop → 11-13
 
   -- ── Colour scheme ───────────────────────────────────────────────────────────
@@ -8193,118 +8151,32 @@ echo "  2. Go to Part 1 of the guide"
 
 ---
 
-## Appendix L: Desktop Environment — XFCE4 + XRDP (Optional)
+## Appendix L: Desktop — Connection and Tiling Reference
 
-A desktop environment is not required by the development stack. Nix, Home Manager, tmux, and Neovim run identically over SSH on a headless server. You only need this appendix if you want:
+> [!note] **Installation is fully automated.** XFCE4, LightDM, XRDP, WezTerm, VS Code, Chrome, ksnip, and the polkit shutdown rule are all installed by `setup-desktop.sh` (Installation Step 5). This appendix covers the steps that the script cannot automate: connecting from Windows and configuring window tiling shortcuts.
 
-- GUI applications accessible from a graphical session (browser, file manager, GUI-based tools)
-- Remote graphical desktop access via RDP from a Windows machine
-- A visual environment for exploring tools before you are comfortable in the terminal
-
-> [!important] **Complete the Nix bootstrap before installing the desktop.** The bootstrap (Part 2) does not require a desktop at any point. Installing XFCE4 first and then running the bootstrap works, but the reverse is cleaner: your development environment is verified on its own merits before the display layer is added. If you need RDP access during the bootstrap, connect via SSH instead.
-
-> [!note] **This appendix applies to any Ubuntu machine** — VMware VM, bare metal, VirtualBox, or cloud instance. The XFCE4 and XRDP steps are not VMware-specific. VMware Tools (Appendix K) improves clipboard and display behaviour if you are in a VMware VM, but it is not required for this appendix to work.
+> [!note] **This appendix applies to any Ubuntu machine** — VMware VM, bare metal, VirtualBox, or cloud instance. VMware Tools (Appendix K) improves clipboard and display behaviour if you are in a VMware VM, but it is not required for XRDP to work.
 
 ---
 
-### L.1 What the Desktop Layer Provides
+### L.1 Why XFCE4?
 
-The desktop is a separate layer from the development environment. It adds:
+- **Lightweight** — low RAM footprint
+- **XRDP-compatible** — LightDM uses Xorg by default (do not switch to Wayland — XRDP does not support it)
+- **Not Xubuntu** — Xubuntu uses Arctica Greeter, which conflicts with XRDP
 
-- **XFCE4**: a lightweight desktop environment (panels, file manager, app launcher, window manager)
-- **LightDM**: the display manager (login screen) that starts XFCE4
-- **XRDP**: a server that accepts RDP connections from Windows Remote Desktop Connection, making the XFCE4 desktop accessible remotely
-- **Google Chrome**: a GUI browser accessible from within the desktop session
-- **xfwm4 tiling**: keyboard-driven window tiling built into XFCE4's own window manager
-
-None of these components interact with Nix, Home Manager, or your dotfiles repository. They are standard apt packages managed by Ubuntu's package manager. Adding or removing the desktop does not affect your development environment.
+None of the desktop components interact with Nix, Home Manager, or your dotfiles repository. Adding or removing the desktop does not affect the development environment.
 
 ---
 
-### L.2 Install XFCE4
+### L.2 Connecting from Windows via RDP
 
-#### Why XFCE4?
+#### Single Monitor
 
-* Lightweight → low RAM usage
-* Stable with XRDP
-* Sufficient for browser + clipboard workflows
-
-#### Why not Xubuntu?
-
-Xubuntu uses **Arctica Greeter**, which conflicts with XRDP.
-
----
-
-#### Install XFCE4 + LightDM
-
-```bash
-sudo apt install -y xfce4 xfce4-goodies xfce4-terminal
-sudo apt install -y lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings
-```
-
-Select **LightDM** when prompted.
-
----
-
-#### Lock Greeter Configuration
-
-```bash
-sudo bash -c 'cat > /etc/lightdm/lightdm.conf << EOF
-[Seat:*]
-greeter-session=lightdm-gtk-greeter
-EOF'
-```
-
-This prevents Ubuntu from substituting a different greeter on future upgrades, which would break XRDP sessions with a black screen.
-
----
-
-> [!warning] **XRDP requires Xorg**
-> LightDM uses Xorg by default. Do not switch to Wayland — XRDP does not support it.
-
----
-
-> [!tip] **Script 1 ends here.** The steps above (A.1 + A.2, excluding the reboot) are automated by **Script 1** in §A.7 below. Run Script 1, then reboot before continuing with A.3.
-
-#### Reboot
-
-```bash
-sudo reboot
-```
-
----
-
----
-
-### L.3 XRDP — Remote Desktop Access
-
-```bash
-sudo apt install -y xrdp
-sudo systemctl enable xrdp
-sudo adduser xrdp ssl-cert
-```
-
-> [!info] Adding xrdp to the `ssl-cert` group allows it to read TLS certificates. Without this, XRDP may fail silently on secure connections.
-
----
-
-#### Configure XFCE Session (CRITICAL)
-
-```bash
-echo "startxfce4" > ~/.xsession
-echo "export DESKTOP_SESSION=xfce" >> ~/.xsessionrc
-echo "export XDG_SESSION_DESKTOP=xfce" >> ~/.xsessionrc
-```
-
-> [!important] Without these files, XRDP sessions open a black screen instead of XFCE. The `.xsession` file tells XRDP which desktop session to launch. The `.xsessionrc` exports the session type so XFCE's panels and compositing behave correctly.
-
----
-
-#### Restart XRDP
-
-```bash
-sudo systemctl restart xrdp
-```
+1. Open **Remote Desktop Connection** (`mstsc`)
+2. Enter the VM's IP address (from `ip addr show`)
+3. Select **Xorg** as the session type
+4. Log in with your Ubuntu username and password
 
 ---
 
@@ -8460,25 +8332,7 @@ sudo reboot
 
 ---
 
----
-
-### L.4 Google Chrome
-
-```bash
-wget -q -O /tmp/google-chrome.deb \
-  https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-
-sudo apt install -y /tmp/google-chrome.deb || sudo apt -f install -y
-rm /tmp/google-chrome.deb
-```
-
-> [!info] Chrome is required for the GitHub OAuth flow that `gh auth login` opens in a browser (§2.5 Manual Step 2). Without a browser, that step cannot complete.
-
----
-
----
-
-### L.5 Window Tiling — Keyboard Shortcuts via Xfwm4
+### L.3 Window Tiling — Keyboard Shortcuts via Xfwm4
 
 XFCE's own window manager, xfwm4, includes full tiling support: halves (left, right, top, bottom) and quarters (all four corners). No additional software is required. Configuration is done once through the XFCE settings GUI and persists across sessions.
 
@@ -8486,7 +8340,7 @@ XFCE's own window manager, xfwm4, includes full tiling support: halves (left, ri
 
 ---
 
-#### L.5.1 Enabling Drag-to-Tile (Mouse)
+#### L.3.1 Enabling Drag-to-Tile (Mouse)
 
 Before configuring keyboard shortcuts, enable the mouse drag-to-tile feature so both input methods work:
 
@@ -8498,7 +8352,7 @@ With this on, dragging a window to the middle third of a screen edge snaps it to
 
 ---
 
-#### L.5.2 Assigning Keyboard Shortcuts
+#### L.3.2 Assigning Keyboard Shortcuts
 
 xfwm4's tiling actions have no shortcuts assigned by default. Set them through:
 
@@ -8525,7 +8379,7 @@ These bindings follow the Windows 11 muscle memory pattern for halves (`Super+Ar
 
 ---
 
-#### L.5.3 The Whisker Menu Conflict
+#### L.3.3 The Whisker Menu Conflict
 
 xfwm4 has a known issue: **if `Super` alone is assigned to open the Whisker menu (the application launcher), `Super+Arrow` tiling shortcuts will not fire.** The Super key is consumed on keypress for the menu binding before xfwm4 can process the combination.
 
@@ -8549,7 +8403,7 @@ Now `Super+Arrow` works as expected for tiling, and `Super+Space` opens the app 
 
 ---
 
-#### L.5.4 Cycling Through Sizes
+#### L.3.4 Cycling Through Sizes
 
 xfwm4's tiling is not a one-size-per-position system. Pressing the same shortcut repeatedly **cycles the window through width presets** at that position. For example, pressing `Super+Left` once snaps the window to the left half. Pressing it again may snap it to the left third or left two-thirds, depending on your xfwm4 version and configuration.
 
@@ -8557,7 +8411,7 @@ This cycling behaviour is built in and requires no configuration. It is useful o
 
 ---
 
-#### L.5.5 Backing Up the Configuration
+#### L.3.5 Backing Up the Configuration
 
 The tiling shortcuts are stored in:
 
@@ -8587,121 +8441,27 @@ cp ~/dotfiles/xfce4/xfce4-keyboard-shortcuts.xml \
 
 ---
 
----
+### L.4 Desktop Setup Script Reference
 
----
-
-### L.6 Desktop Setup Script
-
-> [!tip] **📋 This section is the source for `setup-desktop.sh`** in your `workstation-scripts` repository. Copy the script below into that file.
-
-The XFCE4, LightDM, XRDP, Chrome, and polkit steps can be automated. Once your `workstation-scripts` repository is created and pushed (Appendix M), fetch and run the script:
+The full `setup-desktop.sh` script installs XFCE4, LightDM, XRDP, Noto fonts, WezTerm, VS Code, ksnip, the polkit shutdown rule, and sets WezTerm as the default terminal. It lives in your `workstation-scripts` repository and is run in Installation Step 5:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-desktop.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/yourusername/workstation-scripts/main/setup-desktop.sh)
 ```
 
-This script lives in `workstation-scripts` (public) so any machine can fetch it via `curl` without credentials. Save it as `setup-desktop.sh` at the root of your `workstation-scripts` repository. Run it as your regular sudo user (not root), after the bootstrap is complete.
+The authoritative source is `setup-desktop.sh` in your `workstation-scripts` repository. Refer to the script file for full implementation details.
 
-```bash
-#!/usr/bin/env bash
-# setup-desktop.sh
-# Installs XFCE4, LightDM, XRDP, Google Chrome, and polkit shutdown rule.
-# Run as a regular sudo user after the Nix bootstrap is complete.
-# Safe to re-run (idempotent).
-set -euo pipefail
-
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-step() { echo -e "${GREEN}▶ $1${NC}"; }
-ok()   { echo -e "${GREEN}✓ $1${NC}"; }
-warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
-
-# ── XFCE4 ─────────────────────────────────────────────────────────────────────
-step "Installing XFCE4"
-sudo apt install -y xfce4 xfce4-goodies xfce4-terminal
-ok "XFCE4 installed"
-
-# ── LightDM ───────────────────────────────────────────────────────────────────
-step "Installing LightDM"
-DEBIAN_FRONTEND=noninteractive sudo apt install -y \
-  lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings
-sudo systemctl set-default graphical.target
-echo "/usr/sbin/lightdm" | sudo tee /etc/X11/default-display-manager > /dev/null
-
-# Lock greeter to prevent XRDP black screens on future upgrades
-sudo bash -c 'cat > /etc/lightdm/lightdm.conf << EOF
-[Seat:*]
-greeter-session=lightdm-gtk-greeter
-EOF'
-ok "LightDM installed and locked"
-
-# ── XRDP ──────────────────────────────────────────────────────────────────────
-step "Installing XRDP"
-sudo apt install -y xrdp
-sudo systemctl enable xrdp
-sudo adduser xrdp ssl-cert
-
-# XFCE session files — tell XRDP which desktop to launch
-echo "startxfce4" > ~/.xsession
-{
-  echo "export DESKTOP_SESSION=xfce"
-  echo "export XDG_SESSION_DESKTOP=xfce"
-} >> ~/.xsessionrc
-
-sudo systemctl restart xrdp
-ok "XRDP installed and configured"
-
-# ── Polkit — shutdown/restart from XRDP sessions ──────────────────────────────
-step "Configuring polkit shutdown rule"
-sudo tee /etc/polkit-1/rules.d/85-shutdown.rules > /dev/null << 'EOF'
-polkit.addRule(function(action, subject) {
-    if ((action.id == "org.freedesktop.login1.power-off" ||
-         action.id == "org.freedesktop.login1.reboot") &&
-        subject.isInGroup("sudo") && subject.active) {
-        return polkit.Result.YES;
-    }
-});
-EOF
-sudo systemctl restart polkit
-ok "Polkit shutdown rule applied"
-
-# ── Google Chrome ──────────────────────────────────────────────────────────────
-step "Installing Google Chrome"
-if ! command -v google-chrome &>/dev/null; then
-  wget -q -O /tmp/google-chrome.deb \
-    https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-  sudo apt install -y /tmp/google-chrome.deb || sudo apt -f install -y
-  rm -f /tmp/google-chrome.deb
-  ok "Google Chrome installed"
-else
-  ok "Google Chrome already installed — skipping"
-fi
-
-echo ""
-echo -e "${GREEN}✅ Desktop setup complete.${NC}"
-echo ""
-echo "Next steps:"
-echo "  1. Reboot to activate the display manager: sudo reboot"
-echo "  2. Connect via RDP from Windows (see §L.3 for connection settings)"
-echo "  3. Configure window tiling shortcuts (§L.5)"
-warn "Do not keep a local XFCE session open while an XRDP session is active."
-```
-
----
-
-### L.7 Installation Order Reference (Desktop path)
+### L.5 Installation Order Reference (Desktop path)
 
 | Step | Action | How |
 |---|---|---|
-| — | Complete the Nix bootstrap first | Part 2 |
-| L.2 | XFCE4 + LightDM | Script (setup-desktop.sh) |
-| L.3 | XRDP + XFCE session config | Script (setup-desktop.sh) |
-| L.3 | Polkit shutdown rule | Script (setup-desktop.sh) |
-| L.4 | Google Chrome | Script (setup-desktop.sh) |
+| — | Complete the Nix bootstrap first | Installation Steps 1–4 |
+| Step 5 | XFCE4, LightDM, XRDP, WezTerm, VS Code, Chrome, ksnip, polkit | `setup-desktop.sh` (automated) |
 | — | **Reboot** | Manual |
-| L.5 | Window tiling keyboard shortcuts | Manual (post-login, one time) |
+| Step 6 | Connect via RDP | §L.2 |
+| Step 6 | Window tiling keyboard shortcuts | §L.3 (post-login, one time) |
 
-> [!note] **VMware users** — install VMware Tools (§K.3) before running this script if you have not already. VMware Tools enables clipboard sharing and display auto-resize between the VM and the XRDP session.
+> [!note] **VMware users** — install VMware Tools (§K.3) before running `setup-desktop.sh` if you have not already. VMware Tools enables clipboard sharing and display auto-resize between the VM and the XRDP session.
 
 ---
 
@@ -8740,12 +8500,12 @@ workstation-scripts  (PUBLIC)
   └── setup-desktop.sh       ← fetched by curl to add the desktop layer
 
 dotfiles  (PRIVATE)
-  └── flake.nix              ← cloned via SSH after the bootstrap generates a key
+  └── flake.nix              ← cloned via SSH once key is verified by bootstrap
   └── home.nix
   └── wezterm.lua, tmux.conf, sessionizer, ...
 ```
 
-The bootstrap generates an SSH key, pauses for you to register it, then clones your private dotfiles. `curl` never touches the private repository. SSH never touches the public one.
+The bootstrap verifies that your SSH key exists and is authenticated with GitHub, then clones your private dotfiles. If the key is missing, the bootstrap exits immediately with instructions — no generation, no pause. `wget` never touches the private repository. SSH never touches the public one.
 
 ---
 
@@ -8781,7 +8541,7 @@ Copy each script from the appendix listed below into the corresponding file. The
 |---|---|---|
 | `bootstrap.sh` | Appendix A | Edit `GITHUB_USER` and `DOTFILES_REPO` at the top |
 | `setup-base.sh` | Appendix K (§K.5) | No edits needed |
-| `setup-desktop.sh` | Appendix L (§L.6) | No edits needed |
+| `setup-desktop.sh` | Appendix L (§L.4) | No edits needed |
 
 Make them executable:
 
@@ -8953,9 +8713,10 @@ The full setup sequence from here is:
 
 ```
 Any new machine:
-  curl → setup-base.sh          # installs apt prerequisites
-  curl → bootstrap.sh           # installs the environment
-    └── generates SSH key       # you register it on GitHub (one pause)
+  wget → setup-base.sh          # installs apt prerequisites
+  [manual] ssh-keygen + register key on GitHub
+  wget → bootstrap.sh           # installs the environment (fully unattended)
+    └── verifies SSH key        # exits with instructions if missing
     └── git clone dotfiles      # pulls your private config
     └── home-manager switch     # builds the environment
 ```

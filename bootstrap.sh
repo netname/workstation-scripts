@@ -4,30 +4,27 @@
 # Lives in: workstation-scripts/ (PUBLIC repo) – fetched via curl
 # Run with: wget -qO bootstrap.sh https://raw.githubusercontent.com/netname/workstation-scripts/main/bootstrap.sh && bash bootstrap.sh
 #
-# What this script does:
+# What this script does (headless-safe — no display required):
 #   1.  Installs system dependencies and sets zsh as the login shell
 #   2.  Verifies the SSH key is present and authenticated with GitHub
 #   3.  Clones your PRIVATE dotfiles repo via SSH
 #   4.  Installs Nix (Determinate Systems installer)
-#   5.  Applies Home Manager from your flake (owns git identity + config)
-#   6.  Installs WezTerm via Flatpak
-#   7.  Installs JetBrainsMono Nerd Font
-#   8.  Installs Docker Engine
-#   9.  Verifies GitHub CLI (installed by Home Manager; apt fallback)
-#   10. Configures gh pager (delta – not manageable via Home Manager)
-#   11. Installs Gemini CLI + Conductor + Context7 MCP
-#   12. Symlinks user-managed dotfiles (WezTerm, tmux, sessionizer)
-#         ↑ Must precede TPM and LazyVim: both need symlinks in place
-#           before their headless installs can locate the config files.
-#   13. Installs tmux Plugin Manager and plugins headlessly
-#   14. Stages LazyVim starter into dotfiles
-#   15. Runs LazyVim headless plugin sync
-#   16. Installs VS Code via apt repository
-#   17. Installs VS Code extensions (from dotfiles/vscode/extensions.txt)
+#   5.  Applies Home Manager from your flake (owns git config, tmux plugins,
+#         Nerd Font, and all CLI packages declared in home.nix)
+#   6.  Installs Docker Engine
+#   7.  Verifies GitHub CLI (installed by Home Manager; apt fallback)
+#   8.  Configures gh pager (delta – not manageable via Home Manager)
+#   9.  Installs Gemini CLI + Conductor + Context7 MCP
+#   10. Symlinks user-managed dotfiles (sessionizer)
+#   11. Stages LazyVim starter into dotfiles
+#   12. Runs LazyVim headless plugin sync
 #
-# NOTE: git identity (user.name, user.email), delta pager, and aliases are
-# managed entirely by Home Manager via programs.git in home.nix. The bootstrap
-# script does NOT write any git config.
+# GUI-only tools (WezTerm, VS Code, Chrome, ksnip) are installed by setup-desktop.sh.
+# Run setup-desktop.sh after this script if you want a graphical environment.
+#
+# NOTE: git identity, delta pager, aliases, tmux plugins, and JetBrainsMono
+# Nerd Font are managed entirely by Home Manager via home.nix. The bootstrap
+# script does NOT write any git config or install fonts/tmux plugins manually.
 #
 # PREREQUISITE: Generate and register your SSH key on GitHub before running
 # this script. The bootstrap runs fully automatically with no pauses once the
@@ -52,8 +49,6 @@ ok()    { echo -e "${GREEN}✓ $1${NC}"; }
 GITHUB_USER="netname"
 DOTFILES_REPO="git@github.com:netname/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
-NERD_FONT_VERSION="v3.2.1"
-NERD_FONT_NAME="JetBrainsMono"
 
 echo -e "${GREEN}🚀 Starting workstation bootstrap...${NC}"
 
@@ -64,21 +59,19 @@ echo -e "${GREEN}🚀 Starting workstation bootstrap...${NC}"
 step "Pre-creating user-owned directories"
 mkdir -p \
     "$HOME/.config/git" \
-    "$HOME/.config/wezterm" \
     "$HOME/.config/tmux" \
     "$HOME/.local/bin" \
-    "$HOME/.local/share/fonts/NerdFonts" \
     "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 ok "User directories ready"
 
 # ── Step 1: System dependencies ──────────────────────────────────────────────
-step "Installing system dependencies (git, curl, openssh-client, flatpak, zsh)"
+step "Installing system dependencies (git, curl, openssh-client, zsh)"
 sudo apt-get update -qq
-sudo apt-get install -y git curl openssh-client flatpak xdg-desktop-portal-gtk zsh
+sudo apt-get install -y git curl openssh-client zsh
 ok "System dependencies installed"
 
-# ── Step 2: Set zsh as login shell ───────────────────────────────────────────
+# Set zsh as login shell ─────────────────────────────────────────────────────
 step "Setting zsh as login shell"
 if [ "$(getent passwd "$USER" | cut -d: -f7)" != "/usr/bin/zsh" ]; then
     sudo usermod -s /usr/bin/zsh "$USER"
@@ -87,7 +80,7 @@ else
     ok "Login shell already set to zsh – skipping"
 fi
 
-# ── Step 3: Verify SSH key ────────────────────────────────────────────────────
+# ── Step 2: Verify SSH key ────────────────────────────────────────────────────
 # The key must exist and be registered on GitHub before this script is run.
 step "Verifying SSH key for GitHub"
 if [ ! -f "$HOME/.ssh/id_ed25519" ]; then
@@ -116,7 +109,7 @@ if ! echo "$SSH_OUTPUT" | grep -q "successfully authenticated"; then
 fi
 ok "SSH key verified – GitHub authentication successful"
 
-# ── Step 4: Clone dotfiles ────────────────────────────────────────────────────
+# ── Step 3: Clone dotfiles ────────────────────────────────────────────────────
 step "Cloning private dotfiles repository"
 if [ ! -d "$DOTFILES_DIR" ]; then
     git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
@@ -128,7 +121,7 @@ else
 fi
 cd "$DOTFILES_DIR"
 
-# ── Step 5: Install Nix (Determinate Systems) ────────────────────────────────
+# ── Step 4: Install Nix (Determinate Systems) ────────────────────────────────
 step "Installing Nix"
 if ! command -v nix &>/dev/null; then
     curl --proto '=https' --tlsv1.2 -sSf -L \
@@ -144,7 +137,7 @@ else
     ok "Nix already installed – skipping"
 fi
 
-# ── Step 6: Apply Home Manager via Flake ─────────────────────────────────────
+# ── Step 5: Apply Home Manager via Flake ──────────────────────────────────────
 # Home Manager owns: git identity, delta config, git aliases, zsh, starship,
 # direnv, fzf, and all CLI packages declared in home.nix.
 # Do NOT write git config anywhere else in this script.
@@ -159,35 +152,7 @@ ok "Home Manager applied"
 # shellcheck disable=SC1090
 . "$HOME/.nix-profile/etc/profile.d/nix.sh" 2>/dev/null || true
 
-# ── Step 7: Install WezTerm via Flatpak ──────────────────────────────────────
-step "Installing WezTerm"
-if ! command -v wezterm &>/dev/null && ! flatpak list --user 2>/dev/null | grep -q wezterm; then
-    flatpak remote-add --user --if-not-exists flathub \
-        https://flathub.org/repo/flathub.flatpakrepo
-    flatpak install --user -y flathub org.wezfurlong.wezterm
-    ln -sf "$HOME/.local/share/flatpak/exports/bin/org.wezfurlong.wezterm" \
-        "$HOME/.local/bin/wezterm"
-    ok "WezTerm installed via Flatpak (user install)"
-else
-    ok "WezTerm already installed – skipping"
-fi
-
-# ── Step 8: Install JetBrainsMono Nerd Font ──────────────────────────────────
-step "Installing JetBrainsMono Nerd Font"
-FONT_DIR="$HOME/.local/share/fonts/NerdFonts"
-if [ -z "$(ls -A "$FONT_DIR" 2>/dev/null)" ]; then
-    FONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/download/${NERD_FONT_VERSION}/${NERD_FONT_NAME}.zip"
-    FONT_ZIP="/tmp/${NERD_FONT_NAME}.zip"
-    curl -fsSL "$FONT_URL" -o "$FONT_ZIP"
-    unzip -o "$FONT_ZIP" -d "$FONT_DIR"
-    rm -f "$FONT_ZIP"
-    fc-cache -fv >/dev/null 2>&1
-    ok "JetBrainsMono Nerd Font installed"
-else
-    ok "Nerd Font already installed – skipping"
-fi
-
-# ── Step 9: Install Docker Engine ────────────────────────────────────────────
+# ── Step 6: Install Docker Engine ────────────────────────────────────────────
 step "Installing Docker Engine"
 if ! command -v docker &>/dev/null; then
     sudo apt-get install -y ca-certificates gnupg
@@ -208,7 +173,7 @@ else
     ok "Docker already installed – skipping"
 fi
 
-# ── Step 10: Verify GitHub CLI ────────────────────────────────────────────────
+# ── Step 7: Verify GitHub CLI ─────────────────────────────────────────────────
 # gh is declared in home.nix packages; apt is a fallback for first-run timing
 # issues where HM hasn't sourced yet.
 step "Verifying GitHub CLI"
@@ -225,7 +190,7 @@ https://cli.github.com/packages stable main" \
 fi
 ok "GitHub CLI available"
 
-# ── Step 11: Configure gh pager ──────────────────────────────────────────────
+# ── Step 8: Configure gh pager ───────────────────────────────────────────────
 # git pager (delta) is managed by Home Manager via programs.git.settings.
 # The gh pager is a separate setting not exposed by Home Manager – set it here.
 step "Configuring gh pager"
@@ -238,7 +203,7 @@ else
     ok "gh or delta not in Nix profile yet – skipping gh pager config"
 fi
 
-# ── Step 12: Install Gemini CLI + extensions ──────────────────────────────────
+# ── Step 9: Install Gemini CLI + extensions ──────────────────────────────────
 step "Installing Gemini CLI and extensions"
 if ! command -v gemini &>/dev/null; then
     NPM_BIN="${HOME}/.nix-profile/bin/npm"
@@ -260,42 +225,18 @@ else
     ok "Gemini CLI already installed – skipping"
 fi
 
-# ── Step 13: Symlink user-managed dotfiles ───────────────────────────────────
-# Must run BEFORE Step 13 (TPM) and Step 15 (LazyVim headless sync).
-# TPM's headless install_plugins.sh reads TMUX_CONF to find the plugin list;
-# that path must resolve to an actual file before the script runs.
-# Directories were pre-created in the pre-flight block above.
+# ── Step 10: Symlink user-managed dotfiles ───────────────────────────────────
+# sessionizer is a custom script not managed by Home Manager.
+# tmux.conf is generated by Home Manager (programs.tmux.extraConfig) — no symlink needed.
+# wezterm.lua is symlinked by setup-desktop.sh (WezTerm is desktop-only).
 step "Symlinking user-managed dotfiles"
-ln -sf "$DOTFILES_DIR/wezterm/wezterm.lua" "$HOME/.config/wezterm/wezterm.lua"
-ln -sf "$DOTFILES_DIR/tmux/tmux.conf"      "$HOME/.config/tmux/tmux.conf"
 if [ -f "$DOTFILES_DIR/scripts/sessionizer" ]; then
     chmod +x "$DOTFILES_DIR/scripts/sessionizer"
     ln -sf "$DOTFILES_DIR/scripts/sessionizer" "$HOME/.local/bin/sessionizer"
 fi
-ok "Dotfiles symlinked"
+ok "Dotfiles symlinked (sessionizer; tmux managed by HM, wezterm by setup-desktop.sh)"
 
-# ── Step 14: Install tmux Plugin Manager and plugins ─────────────────────────
-step "Installing tmux Plugin Manager (TPM) and plugins"
-TPM_DIR="$HOME/.tmux/plugins/tpm"
-if [ ! -d "$TPM_DIR" ]; then
-    git clone https://github.com/tmux-plugins/tpm "$TPM_DIR"
-    ok "TPM cloned"
-else
-    ok "TPM already installed – skipping clone"
-fi
-# TMUX_CONF must point to the symlinked config (XDG location, not ~/.tmux.conf)
-# so TPM can find the plugin list during the headless install.
-if [ -f "$HOME/.config/tmux/tmux.conf" ]; then
-    TMUX_CONF="$HOME/.config/tmux/tmux.conf" \
-    TMUX_PLUGIN_MANAGER_PATH="${HOME}/.tmux/plugins" \
-        "$TPM_DIR/scripts/install_plugins.sh" >/dev/null 2>&1 || true
-    ok "TPM plugins installed headlessly"
-else
-    warn "~/.config/tmux/tmux.conf not found – skipping TPM plugin install"
-    warn "Re-run bootstrap or press prefix+I inside tmux to install plugins"
-fi
-
-# ── Step 15: Stage LazyVim starter into dotfiles ──────────────────────────────
+# ── Step 11: Stage LazyVim starter into dotfiles ─────────────────────────────
 step "Staging LazyVim starter"
 NVIM_DIR="$DOTFILES_DIR/nvim"
 if [ ! -s "$NVIM_DIR/init.lua" ]; then
@@ -308,7 +249,7 @@ else
     ok "LazyVim already staged – skipping"
 fi
 
-# ── Step 16: Run LazyVim headless plugin sync ─────────────────────────────────
+# ── Step 12: Run LazyVim headless plugin sync ────────────────────────────────
 step "Running LazyVim headless plugin sync"
 NVIM_BIN="${HOME}/.nix-profile/bin/nvim"
 if [ -x "$NVIM_BIN" ]; then
@@ -317,38 +258,6 @@ if [ -x "$NVIM_BIN" ]; then
 else
     warn "Neovim not found in Nix profile – skipping headless sync"
     warn "Run ':Lazy sync' manually on first Neovim open"
-fi
-
-# ── Step 17: Install VS Code via apt repository ───────────────────────────────
-# apt repository – NOT snap (snap blocks /nix/store access).
-step "Installing VS Code"
-if ! command -v code &>/dev/null; then
-    wget -qO- https://packages.microsoft.com/keys/microsoft.asc \
-        | gpg --dearmor \
-        | sudo dd of=/etc/apt/keyrings/packages.microsoft.gpg >/dev/null 2>&1
-    echo "deb [arch=amd64,arm64,armhf \
-signed-by=/etc/apt/keyrings/packages.microsoft.gpg] \
-https://packages.microsoft.com/repos/code stable main" \
-        | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null
-    sudo apt-get update -qq
-    sudo apt-get install -y code
-    ok "VS Code installed via apt"
-else
-    ok "VS Code already installed – skipping"
-fi
-
-# ── Step 18: Install VS Code extensions ──────────────────────────────────────
-step "Installing VS Code extensions"
-EXTENSIONS_FILE="$DOTFILES_DIR/vscode/extensions.txt"
-if [ -f "$EXTENSIONS_FILE" ] && command -v code &>/dev/null; then
-    while IFS= read -r ext || [ -n "$ext" ]; do
-        [[ -z "$ext" || "$ext" == \#* ]] && continue
-        code --install-extension "$ext" --force >/dev/null 2>&1 || \
-            warn "Failed to install extension: $ext"
-    done < "$EXTENSIONS_FILE"
-    ok "VS Code extensions installed"
-else
-    warn "vscode/extensions.txt not found or code not on PATH – skipping extensions"
 fi
 
 # ── Complete ──────────────────────────────────────────────────────────────────
@@ -361,6 +270,9 @@ echo "  2. gh auth login   (requires browser OAuth)"
 echo "  3. gemini auth login (requires browser OAuth)"
 echo "  4. Verify SSH remote: cd ~/dotfiles && git remote -v"
 echo "     (should show: git@github.com:${GITHUB_USER}/dotfiles.git)"
+echo ""
+echo "To add a graphical desktop (XFCE4 + XRDP + WezTerm + VS Code):"
+echo "  bash <(wget -qO- https://raw.githubusercontent.com/${GITHUB_USER}/workstation-scripts/main/setup-desktop.sh)"
 echo ""
 echo "Back up your SSH private key to a secure location:"
 echo "  ~/.ssh/id_ed25519  (cannot be regenerated from dotfiles)"
