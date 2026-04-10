@@ -202,9 +202,9 @@ The bootstrap runs fully automatically with no prompts. It installs:
 - **Docker Engine** — rootless daemon, user added to `docker` group
 - **GitHub CLI** (`gh`) — installed by Home Manager; apt fallback on first run
 - **Gemini CLI** + Conductor + Context7 MCP — installed via npm into `~/.local`
-- **tmux** — plugins managed by Home Manager (`programs.tmux.plugins`); no TPM required
+- **tmux** — binary installed by Home Manager; config symlinked via `mkOutOfStoreSymlink` in `home.nix`; plugins managed by TPM (installed to `~/.tmux/plugins/tpm`)
 - **Neovim + LazyVim** — staged from the LazyVim starter and synced headlessly
-- **sessionizer** — symlinked from `~/dotfiles/scripts/sessionizer` into `~/.local/bin`
+- **sessionizer** — symlinked from `~/dotfiles/scripts/sessionizer` into `~/.local/bin`; bound to `Ctrl-f` via `display-popup` in `tmux.conf`
 
 Git identity (`user.name`, `user.email`) is declared in `home.nix` and applied by Home Manager — the bootstrap does not prompt for it.
 
@@ -1168,7 +1168,7 @@ This repository contains your identity and preferences. Keep it private.
 
 `wezterm/wezterm.lua` is your WezTerm configuration. It is symlinked to `~/.config/wezterm/wezterm.lua` by `setup-desktop.sh`. You edit this file directly and reload with `SUPER+SHIFT+R`. Covered in Part 3.
 
-`tmux/tmux.conf` is your tmux configuration. Its content is embedded in the Home Manager-generated `~/.config/tmux/tmux.conf` via `programs.tmux.extraConfig`. You edit this source file and apply changes with `hms`; reload the live config with `prefix r`. Covered in Part 3.
+`tmux/tmux.conf` is your tmux configuration. It is symlinked to `~/.config/tmux/tmux.conf` via `mkOutOfStoreSymlink` in `home.nix` (the same pattern used for Neovim), so TPM can write plugin state at runtime. You edit this source file directly and reload with `prefix r` — no `hms` required. Plugins are managed by TPM (`~/.tmux/plugins/tpm`); install them inside tmux with `Ctrl-Space I`. Covered in Part 3.
 
 `nvim/` starts as a placeholder directory. The bootstrap stages the LazyVim starter into it during step 13 (§2.4.3). After that, it is a mutable directory containing your Neovim/LazyVim configuration. It is symlinked to `~/.config/nvim/` via the `mkOutOfStoreSymlink` pattern in `home.nix`. Covered in Part 3.
 
@@ -3152,25 +3152,26 @@ The sessionizer avoids all of this by making recreation cheaper than restoration
 
 ### 5.2 What the Sessionizer Does
 
-The sessionizer is a bash script bound to `Ctrl-f` in `tmux.conf`. When invoked:
+The sessionizer is a bash script bound to `Ctrl-f` in `tmux.conf` using `display-popup -E`. The popup gives fzf a real terminal to render in — without it, fzf has no TTY and exits silently. When invoked:
 
 ```
 Ctrl-f pressed (from anywhere in tmux)
         ↓
-fzf opens with a list of candidate project directories
-(combines zoxide frecency history + find scan of ~/projects)
+tmux opens a popup window
+        ↓
+fzf appears listing immediate subdirectories of ~/code
         ↓
 You fuzzy-type a partial name and press Enter
         ↓
 Does a tmux session with this name already exist?
   YES → switch-client to the existing session (under 1 second)
-  NO  → detect project type from directory contents
-      → create a new session with the matching layout
-      → open Neovim, start Gemini CLI, tail logs as appropriate
-      → switch-client to the new session (2–3 seconds)
+  NO  → create a new session rooted at the selected directory
+      → switch-client to the new session (under 1 second)
 ```
 
-The session name is derived from the directory's basename: lowercase, spaces and dots replaced with underscores. `~/projects/mi-papelera` becomes `mi-papelera`. `~/projects/achemex.mx` becomes `achemex_mx`.
+The session name is derived from the directory's basename with spaces and dots replaced by underscores. `~/code/my-app` becomes `my-app`. `~/code/achemex.mx` becomes `achemex_mx`.
+
+> [!important] **The popup shell does not inherit your Nix profile.** `fzf` lives in `~/.nix-profile/bin`, which is not in the popup's default PATH. The sessionizer script sources the Nix profile at startup to ensure `fzf` is found. Do not remove those two lines from the top of the script.
 
 ---
 
@@ -3290,31 +3291,33 @@ Full instructions for adding a new layout type are in §5.7.
 
 The complete sessionizer script lives at `~/dotfiles/scripts/sessionizer` in your dotfiles repository. The bootstrap symlinked it to `~/.local/bin/sessionizer`, which is on your `$PATH`. This section walks through each functional block so you can understand what to modify and why.
 
+#### Block 0: Nix Profile Sourcing
+
+```bash
+. "$HOME/.nix-profile/etc/profile.d/nix.sh" 2>/dev/null || true
+export PATH="$HOME/.nix-profile/bin:$PATH"
+```
+
+The popup shell launched by `display-popup` does not run `.zshrc` or `.profile`. It is a minimal bash shell with the system PATH. `fzf` (and any other Nix-installed tool used by the script) is in `~/.nix-profile/bin`, which is not in that PATH. These two lines source the Nix profile and prepend its bin to PATH, making `fzf` available for the rest of the script.
+
 #### Block 1: Directory Discovery
 
 ```bash
-candidates=$(
-  {
-    zoxide query --list 2>/dev/null
-    find "$HOME/projects" "$HOME/work" \
-      -mindepth 1 -maxdepth 2 -type d 2>/dev/null
-  } | sort -u
-)
+selected=$(find ~/code -mindepth 1 -maxdepth 1 -type d | fzf)
 ```
 
-The candidate list is built from two sources combined and deduplicated:
+A `find` scan of `~/code` lists every immediate subdirectory (depth 1 only) and pipes it directly to `fzf`. `-mindepth 1` excludes `~/code` itself. `-maxdepth 1` limits to direct children — enough for a flat project layout.
 
-**zoxide history** (`zoxide query --list`): directories you have visited recently, ranked by frecency. These appear at the top of the fzf list. After a few days of use, your most-visited project directories are always at the top — the fuzzy search is often just `Ctrl-f` + `Enter` for the most recently used project.
-
-**`find` scan**: a depth-limited scan of `~/projects` and `~/work`. `-mindepth 1` excludes the root directories themselves. `-maxdepth 2` includes direct children and one level of subdirectories — enough to find `~/projects/my-project` and `~/projects/org/repo` without scanning deeply into node_modules or virtualenvs.
-
-`sort -u` deduplicates entries that appear in both sources. The `2>/dev/null` on both commands suppresses errors for directories that do not exist — if you have no `~/work` directory, the script continues without error.
-
-**To add more search locations:** append additional `find` paths inside the subshell. For example, to also scan `~/homelab`:
+**To search deeper or add more locations:** extend the `find` command. For example, to also include one level of nested projects:
 
 ```bash
-find "$HOME/projects" "$HOME/work" "$HOME/homelab" \
-  -mindepth 1 -maxdepth 2 -type d 2>/dev/null
+find "$HOME/code" -mindepth 1 -maxdepth 2 -type d | fzf
+```
+
+Or to also scan a `~/work` directory:
+
+```bash
+{ find "$HOME/code" "$HOME/work" -mindepth 1 -maxdepth 1 -type d; } | sort -u | fzf
 ```
 
 #### Block 2: Fuzzy Selection
@@ -3392,7 +3395,13 @@ The final line switches the client to the newly created session. This is what pu
 
 ### 5.6 Installation
 
-The bootstrap handled the installation: it copied the sessionizer script to `~/dotfiles/scripts/sessionizer`, made it executable, and symlinked it to `~/.local/bin/sessionizer`. The tmux binding (`bind -n C-f run-shell "sessionizer"`) is in `tmux.conf`.
+The bootstrap handled the installation: it copied the sessionizer script to `~/dotfiles/scripts/sessionizer`, made it executable, and symlinked it to `~/.local/bin/sessionizer`. The tmux binding in `tmux.conf` uses `display-popup -E` (not `run-shell`) so fzf has a real terminal to render in:
+
+```
+bind -n C-f display-popup -E "~/.local/bin/sessionizer"
+```
+
+> [!important] Do not use `run-shell` for the sessionizer. `run-shell` executes the script in the background without a TTY. fzf requires a TTY to display its interface and will exit silently if one is not available. `display-popup -E` opens a proper terminal popup.
 
 Verify the full installation chain before first use:
 

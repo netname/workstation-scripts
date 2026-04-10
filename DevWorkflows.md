@@ -2,9 +2,227 @@
 
 ## Development Workflows
 
-This guide covers the complete day-to-day development workflow: tmux workspace management, Git fundamentals, the branch/PR/merge loop, keeping branches current, history and recovery operations, releases, and AI-assisted development with Conductor. It is a companion to the **Dev Environment** guide, which covers installation, configuration, and tool setup.
+This guide covers the complete day-to-day development workflow — from opening your first terminal of the day to merging a pull request. It is a companion to the **Dev Environment** guide, which covers installation, configuration, and tool setup.
 
-**How to use this guide.** Parts 1–9 are the reference you read to learn. Part 10 contains shell function definitions to add to your shell. Part 11 is a command quick-reference to consult mid-task. Appendix A is the troubleshooting index. Start at Part 3 (Orientation) if you are already comfortable with the tools and want the workflow.
+**If you are new to this setup, read in order.** The guide is structured so each part builds on the previous one. Do not skip parts in your first week — even familiar-looking sections contain decisions specific to this stack.
+
+| Section | What it covers | When to read |
+|---|---|---|
+| Before Part 1 | Your first day — a map of the whole stack | Before everything else |
+| **Part 1** | tmux: persistent workspaces | Day 1 |
+| **Part 1B** | Your development environment: Devenv, Direnv, Docker, dotfiles | Day 1 |
+| **Part 1C** | Writing code in Neovim | Day 1 |
+| **Part 2** | Core git concepts | Before git commands |
+| **Part 3** | Orientation: starting every session | Every session |
+| **Part 4** | Starting new work: issue → branch → commits | When starting a feature |
+| **Part 5** | Keeping a branch current | When main has moved |
+| **Part 6** | Pull requests: author and reviewer | When your work is ready |
+| **Part 7** | History and recovery | When something goes wrong |
+| **Part 8** | Releases | When shipping |
+| **Part 9** | AI-assisted development: Conductor | When delegating large features |
+| **Part 9B** | AI-assisted development: Claude Code | For interactive AI coding |
+| **Part 10** | Shell utility functions | Reference |
+| **Part 11** | Quick reference | Mid-task lookup |
+| Appendix A | Troubleshooting | When stuck |
+| Appendix B | Standard workflow at a glance | Daily poster |
+| Appendix C | Glossary | When a term is unclear |
+| Appendix D | Starting a new project from scratch | When bootstrapping |
+| Appendix E | Complete feature walkthrough | Read once end-to-end |
+
+---
+
+### Before Part 1: Your First Day — A Map of the Stack
+
+This section is for people who have just finished the bootstrap (Dev Environment guide) and are opening their development environment for the first time. It answers: "I have all these tools installed — now what?"
+
+If you are already comfortable with the tools and want the workflow directly, start at Part 3.
+
+---
+
+#### What You Have Installed (and What Each Tool Does)
+
+Your workstation is not a collection of independent tools. It is a layered system where each tool owns a specific responsibility and hands off to the next. Understanding this map prevents the most common source of confusion: trying to solve a problem at the wrong layer.
+
+---
+
+##### The Four Core Tools: WezTerm, tmux, Sessionizer, and Neovim
+
+These four tools form the spine of your daily workflow. They are designed to work together and each one has a specific, non-overlapping job.
+
+**WezTerm — the terminal window**
+
+WezTerm is the application you open. It is a GPU-accelerated terminal emulator: its job is to draw text on screen and pass your keystrokes to whatever program is running inside it. That is nearly all it does from your perspective.
+
+The important thing: WezTerm is *disposable*. Close it. Reopen it. Nothing is lost. This is possible because the actual work lives one layer down, in tmux.
+
+WezTerm is configured to launch tmux automatically on every open (`default_prog` in `wezterm.lua`). You do not start tmux manually.
+
+**tmux — persistent workspaces**
+
+tmux runs *inside* WezTerm and is the layer where your actual work lives. It organises everything into a three-level hierarchy:
+
+```
+Session  ← one per project  (e.g. "myapp", "dotfiles", "api")
+  Window   ← one per role    (e.g. "editor", "services", "git")
+    Pane     ← subdivisions   (e.g. Neovim on the left, shell on the right)
+```
+
+The critical property: **sessions outlive WezTerm**. When you close WezTerm, the tmux server keeps running. All your sessions — with their windows, panes, and running processes — stay exactly as you left them. When you reopen WezTerm, you reattach and continue.
+
+Your prefix key is `Ctrl-Space`. Most tmux actions start with this chord:
+- `Ctrl-Space d` — detach (leave sessions running, close WezTerm safely)
+- `Ctrl-Space s` — list all running sessions
+- `Ctrl-Space |` — split the current pane vertically
+- `Ctrl-Space -` — split the current pane horizontally
+- `Ctrl-Space r` — reload `tmux.conf` without restarting
+
+**The sessionizer — project switching**
+
+The sessionizer is a small shell script (`~/dotfiles/scripts/sessionizer`) bound to `Ctrl-f`. Press it from anywhere inside tmux and a popup appears listing every directory under `~/code`. Select one and the sessionizer either:
+
+- Creates a new tmux session named after that directory and switches to it, or
+- Switches to the existing session if one is already running for that project
+
+This is your primary navigation tool. You do not juggle tabs or windows — you press `Ctrl-f` and pick a project. Each project gets its own isolated tmux session with its own windows and panes. Switching between projects is instantaneous and non-destructive.
+
+```
+Ctrl-f  →  popup appears  →  type project name  →  Enter  →  you are there
+```
+
+**Neovim — the editor**
+
+Neovim runs inside a tmux pane. It is a modal text editor with a language server (LSP) that provides autocomplete, inline errors, go-to-definition, and formatting. It is configured with LazyVim, which gives you a working IDE-like setup out of the box.
+
+Your leader key inside Neovim is `Space`. Most Neovim actions start with `Space`:
+- `Space f f` — find a file by name
+- `Space f g` — search across all files (live grep)
+- `Space e` — toggle the file explorer
+- `Space g g` — open lazygit
+
+**How they work together**
+
+```
+You open WezTerm
+  └── WezTerm auto-launches tmux (via wezterm.lua default_prog)
+        └── You press Ctrl-f (sessionizer)
+              └── You pick a project from ~/code
+                    └── tmux creates/switches to a session for that project
+                          └── You open Neovim in a pane: nvim .
+                                └── LSP attaches, autocomplete works,
+                                    errors appear inline
+```
+
+Moving between panes (e.g. from Neovim to a shell pane) uses `Ctrl-h/j/k/l` — the same keys work whether the focus is in Neovim or tmux, handled by the vim-tmux-navigator plugin.
+
+---
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  WezTerm                                                            │
+│  Your terminal emulator. Opens on boot. Auto-launches tmux.        │
+│  You rarely interact with WezTerm directly after opening it.       │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  tmux — persistent workspaces                                 │  │
+│  │                                                               │  │
+│  │  One session per project. Nothing is lost when you close      │  │
+│  │  the terminal. Ctrl-f switches between projects.              │  │
+│  │                                                               │  │
+│  │  ┌────────────────────────┐  ┌────────────────────────────┐  │  │
+│  │  │  Neovim (your editor)  │  │  Shell (zsh commands)      │  │  │
+│  │  │                        │  │                            │  │  │
+│  │  │  Opens files. Shows    │  │  git, gh, docker,          │  │  │
+│  │  │  errors inline. LSP    │  │  devenv, pytest, etc.      │  │  │
+│  │  │  autocomplete.         │  │                            │  │  │
+│  │  └────────────────────────┘  └────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  Devenv + Direnv — per-project environments                   │  │
+│  │                                                               │  │
+│  │  When you cd into a project, the correct Python/Node/etc.     │  │
+│  │  activates automatically. Nothing to remember.               │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  Docker Compose — running services                            │  │
+│  │                                                               │  │
+│  │  Databases, caches, queues. Your code connects to these.      │  │
+│  │  docker compose up -d starts them. They run in the background.│  │
+│  └───────────────────────────────────────────────────────────────┘  │
+│                                                                     │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │  Home Manager + Nix — global tools                            │  │
+│  │                                                               │  │
+│  │  lazygit, gh, fzf, bat, and dozens of other tools.           │  │
+│  │  Changing home.nix and running hms updates everything.        │  │
+│  └───────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**When something is broken, the layer chart tells you where to look:**
+
+| Symptom | Layer responsible | How to fix |
+|---|---|---|
+| `lazygit` command not found | Home Manager | Add to `home.nix`, run `hms` |
+| Wrong Python version in a project | Devenv | Edit `devenv.nix`, run `direnv reload` |
+| Database connection refused | Docker Compose | `docker compose up -d` |
+| No autocomplete in Neovim | Devenv (LSP binary missing) | Check `which pyright-langserver` |
+| Environment doesn't load on `cd` | Direnv | Run `direnv allow` in the project |
+
+---
+
+#### Your First Session: Step by Step
+
+**1. Open WezTerm.**
+
+WezTerm starts and automatically attaches to a tmux session named `main`. You see a shell prompt inside tmux. You are now inside the environment.
+
+**2. Press `Ctrl-f`** (hold Ctrl, press f).
+
+A popup appears with a fuzzy-finder listing your project directories under `~/code`. This is the sessionizer — your primary way of moving between projects. Type a few characters of the project name and press Enter.
+
+**3. You are now in your project workspace.**
+
+The sessionizer drops you into a tmux session named after your project directory, rooted at that directory. From here you open your editor, run commands, and manage version control — all inside one persistent workspace.
+
+Navigate between open sessions at any time with `Ctrl-f` again.
+
+**4. Before writing code, check the state of the branch:**
+
+```bash
+git lg         # see: recent commit history
+git st         # see: staged/unstaged files
+```
+
+**5. To end your session:** press `Ctrl-Space d` (detach). The session keeps running in the background. Close WezTerm. Tomorrow, open WezTerm and press `Ctrl-f` — your workspace is exactly where you left it.
+
+---
+
+#### The Tools You Will Use Every Day
+
+| Tool | How you access it | What you use it for |
+|---|---|---|
+| tmux | Always running inside WezTerm | Persistent workspaces, switching projects |
+| Neovim | Type `nvim .` in a shell | Writing code |
+| lazygit | Type `lg` in any shell | Staging, committing, resolving conflicts |
+| yazi | Type `y` in any shell | File browsing; exits back to the directory you navigated to |
+| `gh` CLI | Any shell | GitHub: issues, PRs, CI runs |
+| `git` | Any shell | Branch, commit, push, fetch, rebase |
+| `devenv` | Inside a project directory | Managed automatically by direnv |
+| `docker compose` | Any shell, from project root | Starting/stopping databases and services |
+| Gemini CLI | Any shell | Quick questions, code review |
+| Claude Code (`claude`) | Any shell | Interactive file editing, codebase questions |
+
+---
+
+#### The Three Concerns of Daily Work
+
+Every day, you work across three concerns. This guide covers all three:
+
+1. **The environment** — Is the right Python version active? Are the databases running? → Part 1B
+2. **The editor** — Opening files, navigating code, using the LSP, running tests. → Part 1C
+3. **The version control loop** — Issue → branch → commits → PR → merge. → Parts 2–8
 
 ---
 
@@ -51,7 +269,7 @@ tmux-resurrect and tmux-continuum — plugins that save and restore session stat
 
 **Why.** Saved state goes stale. A session saved two days ago has the wrong working directory, the wrong running processes, and possibly the wrong branch. You spend more time cleaning up the restored state than you saved by not recreating it.
 
-**The alternative principle:** a session is a recipe, not a snapshot. Your sessionizer script (Dev Environment §6.3) defines exactly what a workspace looks like for each project. Running it always produces the same clean result. You recreate workspaces from the sessionizer; you never save them.
+**The alternative principle:** a session is a recipe, not a snapshot. Your sessionizer (`Ctrl-f`) creates a clean session rooted at the project directory every time. You recreate workspaces from the sessionizer; you never save them.
 
 > [!important] This is why tmux-resurrect and tmux-continuum are excluded. The sessionizer replaces them with something more reliable: a deterministic script that produces the same workspace every time.
 
@@ -139,11 +357,11 @@ _When to use:_ ad-hoc investigation, one-off scripts, trying something without a
 **Starting:**
 
 1. Open WezTerm. It auto-attaches to the `main` session (configured in `wezterm.lua` — Dev Environment §4.2).
-2. Press `Ctrl-f`. The sessionizer picker appears.
+2. Press `Ctrl-f`. The sessionizer popup appears.
 3. Fuzzy-type the project name (e.g., `mipap` for `mipapelera`).
 4. Press `Enter`. The workspace is created if it does not exist, or re-attached if it is already running.
 
-You are now inside the correct workspace with the correct windows and panes already laid out.
+You are now inside a tmux session rooted at your project directory, ready to open your editor and start work.
 
 **Ending:**
 
@@ -308,6 +526,619 @@ Your prefix key is `C-Space` (configured in `tmux.conf` — Dev Environment §5.
 > [!tip] `prefix z` (zoom) is one of the most useful bindings to internalize. When you need to read output carefully, zoom the relevant pane to full screen. Press `prefix z` again to restore the layout. Nothing is moved or destroyed — the pane simply fills the window temporarily.
 
 > [!important] **tmux is a user-managed dotfile** (Dev Environment §3.4). Changes to keybindings go in `~/.config/tmux/tmux.conf` directly — not in Home Manager. After editing, reload with `prefix r`. There is no need to restart tmux or rebuild a Home Manager generation for tmux config changes.
+
+---
+
+### Part 1B: Your Development Environment
+
+This part covers the three things that must be working before you write a single line of code: your project environment (Devenv + Direnv), your running services (Docker Compose), and your global tool setup (Home Manager). It also covers how to update your environment when you add a new tool or change a setting.
+
+Think of this as the "is the engine running?" check before each coding session.
+
+---
+
+#### 1B.1 How Direnv Makes Your Environment Automatic
+
+Direnv is the tool that activates your project environment the moment you `cd` into a project directory. You never manually "activate a virtualenv" or "switch Python versions" — it happens automatically.
+
+**How it works:**
+
+```
+You type:  cd ~/code/mipapelera
+                │
+                ▼
+direnv detects: this directory has a .envrc file
+                │
+                ▼
+direnv reads:   .envrc contains "use devenv"
+                │
+                ▼
+direnv activates the devenv environment for this project
+                │
+                ▼
+Your PATH now contains the project's Python, ruff, pyright, etc.
+```
+
+When you leave the directory (`cd ..` or switch to another project), direnv automatically restores the previous environment. The switching is invisible once it is working.
+
+**Confirming it is working:**
+
+```bash
+cd ~/code/your-project
+```
+
+You should see output like:
+
+```
+direnv: loading ~/code/your-project/.envrc
+direnv: export +DEVENV_ROOT +DEVENV_STATE +DEVENV_DOTFILE ...
+```
+
+If you see this, your environment is active. If you see nothing at all, see the troubleshooting steps below.
+
+**The most common first-time issue: direnv needs your permission.**
+
+For security, direnv requires explicit approval before loading any `.envrc` file. This prevents a cloned repository from running arbitrary shell commands automatically.
+
+If you see this message:
+
+```
+direnv: error .envrc is blocked. Run `direnv allow` to approve its content.
+```
+
+Run:
+
+```bash
+direnv allow
+```
+
+You only need to do this once per project, unless the `.envrc` file changes.
+
+> [!tip] **Direnv and the sessionizer.** When the sessionizer (`Ctrl-f`) lands you in a project, it changes to the project directory. If direnv is configured, the environment activates automatically. You should see the `direnv: loading...` message appear in the pane.
+
+**Verifying the correct tool version is active:**
+
+```bash
+which python3        # should point to /nix/store/...
+python3 --version    # should match what devenv.nix specifies
+```
+
+If `which python3` points to `/usr/bin/python3` instead of a Nix store path, the devenv environment did not load. Try:
+
+```bash
+direnv status    # shows why direnv is or isn't loading
+direnv reload    # forces a re-evaluation of .envrc
+```
+
+---
+
+#### 1B.2 Reading and Editing `devenv.nix`
+
+`devenv.nix` is the file that defines everything your project needs: the language runtime, the development tools, the linters, the LSP. It is the equivalent of combining `requirements.txt`, `.python-version`, and "install Node 20" into one reproducible file.
+
+**Where to find it:** in the root of your project directory.
+
+**What a typical Python project `devenv.nix` looks like:**
+
+```nix
+{ pkgs, ... }:
+
+{
+  # The language runtime
+  languages.python = {
+    enable = true;
+    version = "3.12";
+    venv.enable = true;
+    venv.requirements = ./requirements.txt;
+  };
+
+  # Tools available when you're inside this project
+  packages = with pkgs; [
+    ruff        # linter and formatter
+    pyright     # language server for Neovim autocomplete
+    pre-commit  # git hook runner
+    just        # command runner (like make, but simpler)
+  ];
+
+  # Git hooks that run automatically before every commit
+  git-hooks.hooks = {
+    ruff.enable = true;
+    ruff-format.enable = true;
+    trailing-whitespace.enable = true;
+    end-of-file-fixer.enable = true;
+  };
+
+  # Custom commands runnable by name inside this project
+  scripts.test.exec = "pytest app/tests/ -v";
+  scripts.lint.exec = "ruff check .";
+}
+```
+
+**What each section does:**
+
+| Section | What it does |
+|---|---|
+| `languages.python` | Installs Python 3.12 and creates an isolated virtual environment |
+| `packages` | Tools available in the shell when in this project directory |
+| `git-hooks.hooks` | Hooks that run automatically on `git commit` (Part 4, §4.5) |
+| `scripts` | Custom commands you can run by name, e.g., `test` runs pytest |
+
+**Adding a package to your project environment:**
+
+1. Open `devenv.nix` in your editor.
+2. Add the package name to the `packages` list.
+3. Re-enter the shell so direnv picks up the change.
+
+```nix
+packages = with pkgs; [
+  ruff
+  pyright
+  pre-commit
+  just
+  httpie    # ← new package added here
+];
+```
+
+```bash
+# Trigger direnv to rebuild the environment:
+cd ..
+cd your-project
+# or: direnv reload
+```
+
+Nix downloads the package and makes it available immediately. No pip install, no brew install, no version conflicts.
+
+> [!tip] **Finding package names.** To find the Nix package name for a tool, run `nix search nixpkgs toolname`. For example: `nix search nixpkgs httpie`. The package name is the part after `legacyPackages.x86_64-linux.` in the output.
+
+**First-time activation is slow (and that is normal).** When you or a colleague first activates a devenv environment on a new machine, Nix downloads the required packages from `cache.nixos.org`. This takes several minutes. Every subsequent activation is instant because Nix caches everything in `/nix/store/`.
+
+---
+
+#### 1B.3 Starting and Managing Services with Docker Compose
+
+Your project's runtime services — databases, caches, message queues — run in Docker containers defined in `docker-compose.yml` (or `compose.yml`) in the project root.
+
+**The essential daily commands:**
+
+```bash
+# Start all services in the background (detached)
+docker compose up -d
+
+# See the status of all running services
+docker compose ps
+```
+
+Expected output from `docker compose ps`:
+
+```
+NAME                   IMAGE          STATUS          PORTS
+mipapelera-db-1        mariadb:10.11  Up 3 minutes    3306/tcp
+mipapelera-redis-1     redis:7        Up 3 minutes    6379/tcp
+```
+
+`Up` means healthy and running. `Exited` means the container stopped — check the logs:
+
+```bash
+# Follow logs from all services (Ctrl-C to stop following)
+docker compose logs -f
+
+# Follow logs from one service only
+docker compose logs -f db
+
+# See the last 50 lines without following
+docker compose logs --tail=50 db
+```
+
+**Stopping services:**
+
+```bash
+# Stop containers but keep them (fast restart later)
+docker compose stop
+
+# Stop and remove containers (data preserved in volumes)
+docker compose down
+
+# Stop, remove containers AND delete all data volumes
+docker compose down -v
+```
+
+> [!warning] `docker compose down -v` permanently deletes your database data. Only use it when you want a completely fresh database (for example, resetting a test environment). Never run it if the database contains real data you need.
+
+**Accessing a running database directly:**
+
+```bash
+# Open an interactive SQL shell in the database container
+docker compose exec db mysql -u root -p
+
+# Run a one-off SQL command
+docker compose exec db mysql -u root -p -e "SHOW DATABASES;"
+```
+
+**Restarting a misbehaving service:**
+
+```bash
+docker compose restart db
+```
+
+**Where to run services commands:** Use Window 2 of your tmux layout (the services window). Run `docker compose up -d` once and leave `docker compose logs -f` running there so you can see service output as you work.
+
+> [!tip] **Start services at the beginning of every session.** The environment check sequence in Part 3 includes confirming services are up. If you forget and your code throws a connection error, `docker compose up -d` is the fix — it takes about two seconds.
+
+---
+
+#### 1B.4 Managing Your Global Environment with Home Manager
+
+Home Manager manages the tools that work across all your projects: `lazygit`, `gh`, `fzf`, your shell prompt, your git aliases, and more. Everything is declared in `~/dotfiles/home.nix`.
+
+Think of `home.nix` as "the recipe for your workstation." Running `hms` (an alias for `home-manager switch`) re-reads the recipe and applies any changes — installing new tools, updating configurations, removing things you deleted.
+
+**Adding a new global tool:**
+
+1. Open `~/dotfiles/home.nix`.
+2. Find the `home.packages` list.
+3. Add the package name.
+4. Save and run `hms`.
+
+```nix
+home.packages = with pkgs; [
+  lazygit
+  gh
+  fzf
+  bat
+  eza
+  tokei    # ← new: counts lines of code by language
+];
+
+# For tools that have their own Home Manager module (like yazi), use the
+# programs.<name> option instead of home.packages — it handles both the
+# binary and shell integration in one block:
+programs.yazi = {
+  enable = true;
+  enableZshIntegration = true;  # adds the `y` shell wrapper
+  shellWrapperName = "y";
+};
+```
+
+```bash
+hms    # applies the change — takes 30–60 seconds
+```
+
+After `hms` completes, the new tool is available in your shell immediately. No logout required.
+
+**Seeing your generation history:**
+
+Every `hms` run creates a new "generation" — a snapshot of your entire environment. You can always roll back to any previous generation.
+
+```bash
+home-manager generations
+```
+
+Example output:
+
+```
+2025-03-17 09:14:22 : id 42 -> /nix/store/abc123.../home-manager-generation
+2025-03-15 11:30:01 : id 41 -> /nix/store/def456.../home-manager-generation
+2025-03-10 08:22:15 : id 40 -> /nix/store/ghi789.../home-manager-generation
+```
+
+**Rolling back when something breaks:**
+
+```bash
+home-manager switch --rollback
+```
+
+This is instant — Nix switches to the previous generation's symlinks without downloading anything. The broken generation still exists; you can switch back to it if needed.
+
+**Committing dotfile changes:**
+
+After making any change to `~/dotfiles/home.nix`, commit it to your dotfiles repository:
+
+```bash
+cd ~/dotfiles
+git add home.nix
+git commit -m "chore(home): add tokei to global packages"
+git push
+```
+
+> [!important] **Your dotfiles are a private git repository.** Every meaningful change to your environment must be committed and pushed. If your machine is lost and your dotfiles are pushed to GitHub, rebuilding your environment on a new machine is a single bootstrap command.
+
+---
+
+#### 1B.5 The Environment Check at Session Start
+
+Before writing any code, spend 30 seconds confirming the environment is healthy. This prevents confusing failures later.
+
+```bash
+# 1. Confirm the project environment is active
+which python3        # should be a /nix/store/... path, not /usr/bin/python3
+
+# 2. Confirm services are running
+docker compose ps    # all services should show "Up"
+
+# 3. Start services if they are stopped
+docker compose up -d
+```
+
+If `which python3` shows `/usr/bin/python3`, the devenv environment is not active:
+
+```bash
+direnv allow     # if this is a new project or .envrc recently changed
+direnv reload    # if direnv was already allowed but environment isn't loading
+```
+
+---
+
+### Part 1C: Writing Code in Neovim
+
+This part covers the practical daily workflow inside Neovim: opening files, navigating a codebase, using the language server (LSP), and running tests. It covers how to use what is already configured — for configuration details, see the Dev Environment guide.
+
+---
+
+#### 1C.1 Opening Neovim
+
+From the shell pane in Window 1:
+
+```bash
+# Open the current directory as a project
+nvim .
+
+# Open a specific file
+nvim app/services/orders.py
+```
+
+The most common pattern: open `nvim .` and then use Neovim's built-in file picker to navigate from there.
+
+---
+
+#### 1C.2 The Leader Key — Understanding Neovim Shortcuts
+
+Before learning any shortcut, you need to understand the **leader key**. In LazyVim, the leader key is the **Space bar**.
+
+Many Neovim shortcuts begin with `<leader>`. When this guide writes `<leader>ff`, it means: press Space, then press f, then press f.
+
+The leader key opens a namespace of commands. Press Space and wait briefly — LazyVim shows a popup listing all available leader commands (powered by which-key). This popup is your map of the entire key system.
+
+> [!tip] **When you are lost or forget a shortcut:** press Space and wait. The popup shows every available command grouped by category. You can learn the entire key system by exploring this popup.
+
+---
+
+#### 1C.3 Navigating a Codebase
+
+**Finding a file by name:**
+
+```
+<leader>ff     (Space → f → f)
+```
+
+A fuzzy finder appears. Type any part of the filename — you do not need to type the full path. Press Enter to open the selected file.
+
+Examples:
+- To open `app/services/orders.py`, type `orderspy` or just `orders`.
+- To open `app/tests/test_invoices.py`, type `testinv`.
+
+**Searching text across all files in the project:**
+
+```
+<leader>fg     (Space → f → g)
+```
+
+Type a string and Neovim searches every file, showing matches with context. Press Enter to jump to the match. This is the fastest way to find where a function is called or where a variable is defined.
+
+**Browsing files in a tree view:**
+
+```
+<leader>e      (Space → e)
+```
+
+Opens a file explorer on the left side. Navigate with `j/k`, press Enter to open a file, `a` to create a new file, `d` to delete.
+
+**Switching between open files:**
+
+```
+<leader>,      (Space → comma)    — fuzzy search all open files
+[b / ]b                            — previous / next open file
+```
+
+---
+
+#### 1C.4 The Three Modes (Essential for Beginners)
+
+Neovim is a modal editor — the same keys do different things depending on which mode you are in. If you have never used Vim, this is the most important thing to learn.
+
+| Mode | How to enter | What the keys do |
+|---|---|---|
+| **Normal** | Press `Escape` (always works) | Navigate, copy, delete, run commands |
+| **Insert** | Press `i` | Type text like a regular editor |
+| **Visual** | Press `v` | Select text |
+| **Command** | Press `:` | Run commands (save, quit, etc.) |
+
+**You start in Normal mode.** Press `i` to start typing. Press `Escape` when done.
+
+**The most important commands to know immediately:**
+
+```
+i          — enter Insert mode (start typing before the cursor)
+o          — enter Insert mode on a new line below
+Escape     — return to Normal mode (works from any mode)
+:w         — save the file
+:q         — quit
+:wq        — save and quit
+:q!        — quit without saving (when you want to discard changes)
+u          — undo (in Normal mode)
+Ctrl-r     — redo (in Normal mode)
+```
+
+> [!tip] **If you get stuck,** press `Escape` once or twice. You are now in Normal mode. Type `:q!` and press Enter to quit without saving. You can always start over.
+
+LazyVim auto-saves files when you leave Insert mode, so you rarely need `:w` manually.
+
+---
+
+#### 1C.5 The Language Server (LSP) — Your Coding Assistant Inside Neovim
+
+The Language Server Protocol (LSP) gives Neovim the intelligence of a full IDE: go-to-definition, hover documentation, inline error highlighting, code actions, and rename refactoring.
+
+The LSP works automatically. When you open a Python file, Neovim starts the Python language server (`pyright`, provided by your devenv environment) and attaches it. Small icons appear in the left margin indicating errors and warnings — these are live, updated as you type.
+
+**Key LSP actions — place your cursor on any symbol and press:**
+
+```
+K              — show hover documentation (type, signature, docstring)
+gd             — go to definition (jump to where the function/class is defined)
+gr             — go to all references (see every place this is used)
+<leader>ca     — code actions (fix import, add missing method, etc.)
+<leader>rn     — rename symbol (renames everywhere in the project)
+<leader>cd     — show the full error/warning message on the current line
+[d / ]d        — jump to previous / next error or warning
+```
+
+**A common workflow for understanding unfamiliar code:**
+
+1. Move the cursor onto a function call you don't recognize.
+2. Press `K` — a popup shows the function's signature and docstring.
+3. Press `gd` — Neovim jumps to the function's definition.
+4. Press `Ctrl-o` — jumps back to where you were.
+
+```
+Ctrl-o    — go back to the previous location (like a browser back button)
+Ctrl-i    — go forward
+```
+
+**When the LSP is not working:**
+
+Symptom: no error highlights in the gutter, `K` shows nothing, `gd` says "No definition found."
+
+Most likely cause: the LSP binary is not in `$PATH` because the devenv environment is not active.
+
+```bash
+# Check from a shell pane:
+which pyright-langserver    # must return a /nix/store/... path
+
+# If it returns nothing, activate the environment:
+direnv allow    # or: direnv reload
+
+# Then, inside Neovim:
+:LspRestart     # restart the language server for the current buffer
+```
+
+---
+
+#### 1C.6 Running Tests
+
+Run tests from the shell pane — the right side of Window 1, or in Window 2.
+
+**Standard pytest commands:**
+
+```bash
+# Run all tests
+pytest app/tests/ -v
+
+# Run a specific test file
+pytest app/tests/test_orders.py -v
+
+# Run a single specific test
+pytest app/tests/test_orders.py::test_validate_missing_sat_code -v
+
+# Stop at first failure (useful when fixing a failing test)
+pytest app/tests/ -x
+
+# Run without capturing output (see print statements)
+pytest app/tests/ -s
+
+# Quiet mode — just the pass/fail counts
+pytest app/tests/ -q
+```
+
+**If your `devenv.nix` defines a `test` script:**
+
+```bash
+test    # runs exactly what devenv.nix defines as the test command
+```
+
+This is the advantage of defining scripts in `devenv.nix`: anyone who enters the project environment can run `test` without knowing the exact pytest flags.
+
+---
+
+#### 1C.7 Using the AI Assistant from Neovim
+
+The git window (Window 3) has a Gemini CLI pane on the right. From Neovim, you can send selected code to it with a single shortcut.
+
+**The workflow:**
+
+1. In Neovim, select text using Visual mode (`v` for character-by-character, `V` for whole lines).
+2. Press `<leader>g` — the selected text is sent to the Gemini pane.
+3. Switch to Window 3 (`Ctrl-Space 3`) to read the response.
+
+**What to send:**
+
+- An error message: select it, send it, ask "what does this mean?"
+- A function you want reviewed: select it, ask "does this handle the case where the list is empty?"
+- Code you want refactored: select it, ask "how would you simplify this?"
+
+**For larger tasks that span multiple files,** use Claude Code from the shell instead. Claude Code can read, write, and search files directly:
+
+```bash
+claude "explain what app/services/orders.py does"
+claude "add type annotations to all functions in this file"
+```
+
+See Part 9B for the full Claude Code workflow.
+
+---
+
+#### 1C.8 Neovim Quick Reference
+
+**Finding files and code:**
+
+```
+<leader>ff    — find file by name (fuzzy)
+<leader>fg    — grep across project
+<leader>fr    — recently opened files
+<leader>e     — file explorer (neo-tree)
+<leader>,     — switch between open files
+```
+
+**Navigating code:**
+
+```
+gd            — go to definition
+gr            — go to all references
+K             — hover documentation
+Ctrl-o        — go back (jump history)
+Ctrl-i        — go forward (jump history)
+```
+
+**Editing:**
+
+```
+i / a / o     — enter Insert mode (before cursor / after cursor / new line)
+Escape        — return to Normal mode
+u / Ctrl-r    — undo / redo
+<leader>ca    — code actions
+<leader>rn    — rename symbol
+```
+
+**Diagnostics (errors and warnings):**
+
+```
+<leader>cd    — show diagnostic on current line
+[d / ]d       — previous / next diagnostic
+<leader>xx    — list all diagnostics in project (Trouble panel)
+```
+
+**Files and quitting:**
+
+```
+:w            — save file
+<leader>bd    — close current buffer (keeps Neovim open)
+:qa           — quit Neovim entirely
+```
+
+**AI assistance:**
+
+```
+<leader>g     — send visual selection to Gemini pane (Window 3)
+```
 
 ---
 
@@ -1247,8 +2078,10 @@ git commit --no-verify -m "feat(orders): wip — bypassing hooks for emergency d
 > If the file does not exist or is empty:
 > 
 > ```bash
-> pre-commit install   # or: just setup
+> pre-commit install   # or: just setup  (if the project has a justfile — see Appendix D)
 > ```
+>
+> **What is `just setup`?** `just` is a command runner (like `make`, but simpler) used in many projects to bundle common tasks. A project with a `justfile` defines `just setup` as a shorthand for "install hooks and dependencies." See Appendix D §D.4 for how to create a justfile for a new project.
 
 ---
 
@@ -3432,6 +4265,162 @@ The compounding effect: stale context produces inconsistent code, which makes th
 
 ---
 
+### Part 9B: AI-Assisted Development with Claude Code
+
+Claude Code is the `claude` CLI — a conversational coding assistant with direct access to your files and codebase. Where Conductor (Part 9) orchestrates autonomous multi-phase implementation, Claude Code is interactive and immediate. Where the Gemini pane handles quick questions, Claude Code handles tasks that require reading, searching, and modifying actual files.
+
+---
+
+#### 9B.1 The Three AI Tools and When to Use Each
+
+Three AI tools are available in this setup. Each fills a different role:
+
+| Tool | Access | Best for |
+|---|---|---|
+| **Gemini pane** + `<leader>g` | Window 3 right pane | Quick questions, explaining a selection, reviewing a snippet |
+| **Conductor** (`/conductor:implement`) | Gemini CLI prompt | Autonomous multi-phase implementation of a fully specified feature |
+| **Claude Code** (`claude`) | Any shell | Interactive editing, codebase navigation, targeted generation, debugging |
+
+**Use the Gemini pane** when you have a single question and the answer is a sentence or a paragraph. You send it code and ask a question. The conversation lives in the pane.
+
+**Use Conductor** when you have a large, well-specified feature to implement across many files, you want it broken into verified phases, and you are comfortable delegating the implementation.
+
+**Use Claude Code** for everything in between: when you want to have a back-and-forth conversation with an AI that can actually read your files, modify them, search the codebase, and run commands.
+
+---
+
+#### 9B.2 Starting a Claude Code Session
+
+From any shell pane in your tmux workspace:
+
+```bash
+claude
+```
+
+This opens an interactive session. Claude Code reads your current directory and has access to all the files in it. You can have a natural conversation, ask it to read files, make changes, run tests, or search for patterns.
+
+**One-off tasks without entering interactive mode:**
+
+```bash
+claude "what does the OrderValidationService class do?"
+claude "find all places where ValidationError is raised"
+claude "add a docstring to validate_line_items in app/services/orders.py"
+```
+
+These run Claude Code, get the answer or make the edit, and return to the shell — just like any other command.
+
+---
+
+#### 9B.3 What Claude Code Can Do
+
+Claude Code is most useful for these kinds of requests:
+
+**Explain and understand:**
+
+```
+> explain what app/services/cfdi.py does and how it fits into the order flow
+> what happens if we call validate_line_items with an empty list?
+> why is this test failing? [paste the error output]
+> walk me through how a MercadoLibre order becomes a CFDI invoice
+```
+
+**Write and edit files:**
+
+```
+> add a unit test for the case where sat_code is None
+> refactor validate_line_items to extract the price tolerance check
+> add type annotations to all functions in app/services/orders.py
+> create a new file app/services/shipping.py with a ShippingService class
+```
+
+**Search and navigate the codebase:**
+
+```
+> find all functions that call the DC Mayorista API
+> which files import from app/models/orders.py?
+> show me every place we catch a ValidationError and what we do with it
+> what patterns does this codebase use for dependency injection?
+```
+
+**Review and check:**
+
+```
+> review the changes I just made — does anything look wrong?
+> does this code follow the same patterns as the rest of the codebase?
+> are there any edge cases this function doesn't handle?
+> is this the right place to put this logic or should it be elsewhere?
+```
+
+---
+
+#### 9B.4 Claude Code and Your Git Workflow
+
+Claude Code edits files but does not make commits on its own (unlike Conductor). After Claude Code modifies files, you review the changes and commit them yourself — the same workflow as any other code change:
+
+```bash
+git diff                                      # see what Claude changed
+git add --patch app/services/orders.py        # review and stage selectively
+git commit -m "feat(orders): add type annotations"
+```
+
+This keeps you in control of every commit and the git history. Claude Code is a collaborator at the editing level, not an autonomous agent.
+
+> [!important] **Always review Claude's changes before committing.** Claude Code is accurate but not infallible. Read the diff, understand what changed, and verify the behavior is correct before staging. The same review discipline you apply to your own code applies to AI-generated code.
+
+---
+
+#### 9B.5 Giving Claude Code Better Context
+
+The more context Claude Code has, the better its output. A few techniques:
+
+**Reference specific files explicitly:**
+
+Instead of: "fix the validation bug"
+
+Ask: "in app/services/orders.py, the validate_line_items function doesn't handle the case where item.sat_code is None — it raises an AttributeError instead of a ValidationError. Fix it."
+
+**Tell it what already exists:**
+
+```
+> I already have a ProductRepository in app/repositories/products.py with a get_by_id method.
+> Add a method to OrderValidationService that uses it to validate SAT codes against the catalog.
+```
+
+**Reference the standards:**
+
+```
+> look at conductor/standards.md and make sure your implementation follows those conventions
+> make the test match the pattern in app/tests/test_invoices.py
+```
+
+**Paste error output directly:**
+
+```
+> I'm getting this error when I run the tests:
+> [paste the full traceback]
+> what is causing it and how do I fix it?
+```
+
+---
+
+#### 9B.6 When to Use Claude Code vs. Conductor
+
+| Situation | Use |
+|---|---|
+| "Explain this function to me" | Claude Code |
+| "Add a docstring to this function" | Claude Code |
+| "Implement a new service with tests — I have a full spec" | Conductor |
+| "Fix this specific bug" | Claude Code |
+| "Implement a feature that touches 8+ files in phases" | Conductor |
+| "Why is this test failing?" | Claude Code |
+| "Write a test for this specific edge case" | Claude Code |
+| "Generate a complete implementation from a detailed spec with checkpoints" | Conductor |
+| "Review what I just wrote" | Claude Code |
+
+The general principle: **Claude Code for interactive, targeted work. Conductor for large autonomous implementation with phased verification.**
+
+---
+
 ### Part 10: Shell Utility Functions Reference
 
 _This part contains the complete definitions for every custom shell function referenced throughout this guide. Add all of these to the `programs.zsh.initContent` block in `home.nix` unless noted otherwise._
@@ -4011,6 +5000,64 @@ _Every command from Parts 1–10 in one place. No explanations — return to the
 
 ---
 
+#### 11.0 Environment and Editor (→ Parts 1B and 1C)
+
+**Environment (Devenv + Direnv):**
+
+```bash
+direnv allow             # approve .envrc for a new or changed project
+direnv status            # diagnose why environment is or isn't loading
+direnv reload            # force re-evaluation of .envrc
+which python3            # confirm active interpreter (should be /nix/store/...)
+devenv shell             # enter project environment manually (if direnv isn't set up)
+```
+
+**Services (Docker Compose):**
+
+```bash
+docker compose up -d     # start all services in background
+docker compose ps        # check service status
+docker compose logs -f   # follow all service logs
+docker compose logs -f db          # follow one service
+docker compose stop                # stop without removing
+docker compose down                # stop and remove containers
+docker compose exec db mysql -u root -p   # access database shell
+docker compose restart db          # restart one service
+```
+
+**Global tools (Home Manager):**
+
+```bash
+hms                            # apply changes from home.nix (home-manager switch)
+home-manager generations       # list all environment snapshots
+home-manager switch --rollback # instantly revert to previous generation
+```
+
+**Neovim essentials (→ Part 1C):**
+
+```
+nvim .              — open current directory as project
+<leader>ff          — find file by name (fuzzy)
+<leader>fg          — grep across project
+<leader>e           — file explorer
+gd                  — go to definition (LSP)
+K                   — hover documentation (LSP)
+<leader>ca          — code actions (LSP)
+<leader>rn          — rename symbol (LSP)
+[d / ]d             — previous / next diagnostic
+:LspRestart         — restart language server
+<leader>g           — send visual selection to Gemini pane
+```
+
+**Claude Code (→ Part 9B):**
+
+```bash
+claude                       # start interactive Claude Code session
+claude "question or task"    # one-off question or edit
+```
+
+---
+
 #### 11.1 Orientation (→ Part 3)
 
 ```bash
@@ -4491,14 +5538,16 @@ _Aliases are defined in Home Manager. This table is a recall reference — not t
 
 #### 11.19 Pre-flight Checklist — Before Starting Work
 
-_Run at the start of every session. Takes 60 seconds. Prevents the most common workflow mistakes._
+_Run at the start of every session. Takes 60–90 seconds. Prevents the most common category of wasted work._
 
 ```
-□  repo-status          — confirm branch, ahead/behind, no unexpected staged/unstaged files
-□  git branch -vv       — confirm tracking relationship is set
-□  git lg               — confirm history looks as expected, no unexpected commits
-□  git stash list       — resolve any outstanding stash entries before starting new work
-□  gh pr status         — address any open review requests or failing CI before new work
+□  which python3             — confirm devenv environment is active (/nix/store path)
+□  docker compose ps         — confirm services are running (Up); start with up -d if not
+□  repo-status               — confirm branch, ahead/behind, no unexpected staged/unstaged files
+□  git branch -vv            — confirm tracking relationship is set
+□  git lg                    — confirm history looks as expected, no unexpected commits
+□  git stash list            — resolve any outstanding stash entries before starting new work
+□  gh pr status              — address any open review requests or failing CI before new work
 □  git sw main && git pull   — ensure local main is current before branching
 ```
 
@@ -5018,6 +6067,52 @@ programs.git.extraConfig = {
 
 ---
 
+**`Ctrl-f` does nothing or opens WezTerm's search bar instead of the sessionizer**
+
+Cause 1: WezTerm intercepts `Ctrl-f` for its built-in pane search before tmux sees it.
+
+Resolution: Add a `SendKey` override in `wezterm.lua` to pass `Ctrl-f` through to tmux:
+
+```lua
+{ key = "f", mods = "CTRL", action = wezterm.action.SendKey { key = "f", mods = "CTRL" } },
+```
+
+Add this inside the `keys = { ... }` table. Reload WezTerm with `Super+Shift+R`.
+
+---
+
+**`Ctrl-f` opens the sessionizer popup but shows nothing / closes immediately**
+
+Cause: The popup shell does not inherit your Nix profile, so `fzf` (which is in `~/.nix-profile/bin`) is not found. The script exits silently.
+
+Resolution: Ensure the sessionizer script sources the Nix profile before invoking `fzf`:
+
+```bash
+. "$HOME/.nix-profile/etc/profile.d/nix.sh" 2>/dev/null || true
+export PATH="$HOME/.nix-profile/bin:$PATH"
+```
+
+These two lines should appear at the top of `~/dotfiles/scripts/sessionizer`, before the `find` command.
+
+---
+
+**`systemctl --user status` shows the session is degraded due to `xdg-desktop-portal-gtk.service`**
+
+Cause: On non-GNOME desktops (XFCE), the GTK portal backend exits with code `1` after idling instead of `0`. Systemd marks any non-zero exit as failure. The service itself is functional — it restarts on demand — but the degraded report appears after every `hms` run.
+
+Resolution: Create a systemd drop-in that tells systemd exit code `1` is acceptable:
+
+```bash
+mkdir -p ~/.config/systemd/user/xdg-desktop-portal-gtk.service.d
+cat > ~/.config/systemd/user/xdg-desktop-portal-gtk.service.d/success-exit.conf << 'EOF'
+[Service]
+SuccessExitStatus=1
+EOF
+systemctl --user daemon-reload
+```
+
+---
+
 **`Ctrl-h/j/k/l` moves within Neovim but not out to tmux panes**
 
 Cause: The vim-tmux-navigator bindings in `tmux.conf` are missing or out of sync with the Neovim configuration (§1.6).
@@ -5213,7 +6308,12 @@ _A single-page reference showing the complete day-to-day loop from session start
 │  Open WezTerm → auto-attaches to main tmux session                 │
 │  Ctrl-f → select project → workspace created or resumed            │
 │                                                                     │
-│  Run orientation sequence:                                          │
+│  Environment check (Part 1B):                                       │
+│    which python3          (confirm /nix/store path)                 │
+│    docker compose ps      (confirm services are Up)                 │
+│    docker compose up -d   (start services if not running)           │
+│                                                                     │
+│  Run orientation sequence (Part 3):                                 │
 │    repo-status                                                      │
 │    git branch -vv                                                   │
 │    git lg                                                           │
@@ -5399,3 +6499,548 @@ _Precise definitions for every term used in this guide. Where a term has a commo
 **Untracked file** A file in the working directory that git has never been told about — not staged, not committed, not ignored. Shown as `??` in `git status --short`. Either stage it, commit it, or add it to `.gitignore`.
 
 **Working tree** The actual files on disk in the project directory — what you see in your editor. Distinct from the staging area (what will be committed) and the repository (what has been committed).
+
+---
+
+### Appendix D: Starting a New Project from Scratch
+
+This appendix walks through bootstrapping a new project from nothing: creating the GitHub repository, declaring the development environment, installing git hooks, and making the first commit. Follow this once and the pattern becomes automatic for every project after.
+
+---
+
+#### D.1 Create the GitHub Repository
+
+```bash
+# Create a new private repository on GitHub and clone it locally
+gh repo create your-project-name \
+  --private \
+  --clone \
+  --description "Brief description of what this does"
+
+# Move into the project directory
+cd your-project-name
+```
+
+`--clone` automatically clones the new repository and sets `origin` to GitHub. You now have an empty repository with a `.git` directory and are ready to work.
+
+---
+
+#### D.2 Declare the Development Environment
+
+Create `devenv.nix` to define the project's reproducible environment. This is the most important file in the project — it ensures every developer (and every machine) uses the same tool versions.
+
+**For a Python/FastAPI project:**
+
+```bash
+cat > devenv.nix << 'EOF'
+{ pkgs, ... }:
+
+{
+  languages.python = {
+    enable = true;
+    version = "3.12";
+    venv.enable = true;
+  };
+
+  packages = with pkgs; [
+    ruff        # linter and formatter
+    pyright     # language server (LSP) for Neovim
+    pre-commit  # git hook runner
+    just        # command runner
+  ];
+
+  git-hooks.hooks = {
+    ruff.enable = true;
+    ruff-format.enable = true;
+    trailing-whitespace.enable = true;
+    end-of-file-fixer.enable = true;
+    check-yaml.enable = true;
+    check-merge-conflict.enable = true;
+  };
+
+  scripts = {
+    test.exec = "pytest app/tests/ -v";
+    lint.exec = "ruff check .";
+    fmt.exec  = "ruff format .";
+  };
+}
+EOF
+```
+
+**Create the `.envrc` file** so direnv activates the environment automatically:
+
+```bash
+echo "use devenv" > .envrc
+direnv allow
+```
+
+Direnv begins building the environment. The first time takes a few minutes as Nix downloads packages. You will see output like:
+
+```
+direnv: loading .envrc
+Building devenv shell...   (this takes a few minutes on first run)
+direnv: export +DEVENV_ROOT +DEVENV_STATE ...
+```
+
+Subsequent entries into the directory are instant.
+
+---
+
+#### D.3 Create the Initial Project Structure
+
+```bash
+# Python project structure (adjust for your stack)
+mkdir -p app/tests
+
+touch app/__init__.py
+touch app/tests/__init__.py
+touch requirements.txt
+touch README.md
+```
+
+**Create a `.gitignore`:**
+
+```bash
+cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Environment
+.env
+.envrc.local
+
+# Devenv
+.devenv/
+devenv.lock
+
+# Editor
+.DS_Store
+EOF
+```
+
+---
+
+#### D.4 Add a `justfile` for Common Commands
+
+`just` is a command runner (like `make`, but with cleaner syntax). A `justfile` in the project root defines the commands teammates need without requiring them to remember exact flags.
+
+```bash
+cat > justfile << 'EOF'
+# Run the test suite
+test:
+    pytest app/tests/ -v
+
+# Run linter
+lint:
+    ruff check .
+
+# Format code
+fmt:
+    ruff format .
+
+# Set up a freshly cloned repository (install hooks, etc.)
+setup:
+    pre-commit install
+    pip install -r requirements.txt
+
+# Run everything: format, lint, test
+check: fmt lint test
+EOF
+```
+
+After someone clones the project and enters the devenv environment:
+
+```bash
+just setup    # installs git hooks and dependencies
+just test     # runs the test suite
+just check    # formats, lints, and tests in one command
+```
+
+The `just setup` command referenced in §4.5 and §9.7 of this guide comes from a `justfile` exactly like this.
+
+---
+
+#### D.5 Make the First Commit
+
+```bash
+git add devenv.nix .envrc .gitignore README.md justfile app/
+git commit -m "chore: initialize project with devenv environment"
+git push -u origin main
+```
+
+The `-u origin main` flag on the first push sets `origin/main` as the upstream tracking branch. After this, plain `git push` works for future pushes.
+
+---
+
+#### D.6 Set Up Branch Protection (one-time, in the browser)
+
+Go to your repository on GitHub → Settings → Branches → Add branch protection rule:
+
+- Branch name pattern: `main`
+- Check: **Require a pull request before merging**
+- Check: **Require status checks to pass before merging** (add this once you have CI)
+- Check: **Require branches to be up to date before merging**
+
+This enforces the one rule (§2.4): no direct commits to `main`. Every change goes through a PR.
+
+---
+
+#### D.7 Create Your First Issue and Start Working
+
+```bash
+# Create the first real work issue
+gh issue create \
+  --title "Add initial application structure" \
+  --assignee @me \
+  --label enhancement
+
+# Note the issue number in the output, then start a branch for it
+git sw main && git pull
+git co feat/1-initial-structure
+```
+
+From here, follow the standard workflow: Part 4 (creating commits), Part 6 (opening a PR), Part 7 (keeping the branch current).
+
+---
+
+#### D.8 Optional: Set Up Conductor Context Files
+
+If you plan to use Conductor (Part 9) for this project, set up its context files before writing significant code — it is much easier to write them from a blank slate than to reconstruct them after the fact.
+
+From inside the project directory, in a Gemini CLI session:
+
+```bash
+/conductor:setup
+```
+
+Then fill in `conductor/tech-stack.md`, `conductor/product.md`, and `conductor/standards.md` with what you know about the project. See §9.2 for what to include in each file.
+
+---
+
+### Appendix E: A Complete Feature Walkthrough
+
+This appendix shows a complete feature cycle from first thought to merged PR, narrated step by step. Read it once to see how all the parts connect before reading each part in depth.
+
+**The feature:** Add a health check endpoint to a FastAPI application that returns the database connection status.
+
+---
+
+#### Step 1: Start the Day
+
+Open WezTerm. It auto-attaches to the `main` tmux session.
+
+Press `Ctrl-f`. Type `mipap` and press Enter. The sessionizer creates or attaches to the `mipapelera` workspace.
+
+**Check the environment is ready:**
+
+```bash
+which python3        # confirms /nix/store/... — devenv is active
+docker compose ps    # confirms: db and redis show "Up"
+```
+
+Redis is not running. Start services:
+
+```bash
+docker compose up -d
+```
+
+**Run the orientation sequence (Part 3):**
+
+```bash
+repo-status
+```
+
+Output:
+
+```
+branch     main
+origin     ↑0 ↓0
+staged     0 files
+unstaged   0 files
+stashes    0
+prs        0 open (assigned to you)
+```
+
+Clean slate. Ready to start.
+
+---
+
+#### Step 2: Create an Issue
+
+Every piece of work starts with an issue. This documents why the work is being done.
+
+```bash
+gh issue create \
+  --title "Add health check endpoint for load balancer" \
+  --assignee @me \
+  --label enhancement
+```
+
+Output:
+
+```
+https://github.com/owner/mipapelera/issues/51
+```
+
+Issue #51. This number goes into the branch name, the commits, and the PR — creating a traceable thread from idea to merged code.
+
+---
+
+#### Step 3: Create a Branch from Up-to-Date `main`
+
+```bash
+git sw main && git pull    # always start from the current main
+git co feat/51-health-check-endpoint
+```
+
+Output:
+
+```
+Switched to branch 'main'
+Already up to date.
+Switched to a new branch 'feat/51-health-check-endpoint'
+```
+
+The branch name encodes the issue number (`51`) and a short description. This makes it immediately clear what the branch is for — no need to look anything up.
+
+---
+
+#### Step 4: Write the Code
+
+Switch to Window 1. Open Neovim:
+
+```bash
+nvim app/api/health.py
+```
+
+The file does not exist yet — Neovim creates it. Press `i` to enter Insert mode:
+
+```python
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+
+router = APIRouter()
+
+
+@router.get("/health")
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """Return service health and database connectivity status."""
+    try:
+        await db.execute("SELECT 1")
+        db_status = "ok"
+    except Exception:
+        db_status = "error"
+
+    return {
+        "status": "ok" if db_status == "ok" else "degraded",
+        "database": db_status,
+    }
+```
+
+Press `Escape` to return to Normal mode. The file auto-saves.
+
+Use `<leader>ff`, type `main.py`, and open `app/main.py` to register the new router. Add the import and router registration. Save.
+
+---
+
+#### Step 5: Write a Test
+
+```bash
+nvim app/tests/test_health.py
+```
+
+```python
+import pytest
+from httpx import AsyncClient
+
+
+@pytest.mark.anyio
+async def test_health_check_returns_ok(async_client: AsyncClient):
+    response = await async_client.get("/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["database"] == "ok"
+
+
+@pytest.mark.anyio
+async def test_health_check_includes_required_fields(async_client: AsyncClient):
+    response = await async_client.get("/health")
+
+    assert "status" in response.json()
+    assert "database" in response.json()
+```
+
+---
+
+#### Step 6: Run the Tests
+
+Switch to the shell pane in Window 1 (`Ctrl-l`):
+
+```bash
+pytest app/tests/test_health.py -v
+```
+
+Output:
+
+```
+PASSED app/tests/test_health.py::test_health_check_returns_ok
+PASSED app/tests/test_health.py::test_health_check_includes_required_fields
+```
+
+Both tests pass. Time to commit.
+
+---
+
+#### Step 7: Review Changes, Stage Selectively, and Commit
+
+Self-review before staging:
+
+```bash
+git diff    # see every change in the working tree
+```
+
+Read through the diff. No debug statements, no TODO comments, no unrelated changes.
+
+Stage each file:
+
+```bash
+git add --patch app/api/health.py       # review hunks, stage all
+git add --patch app/main.py             # review the router registration
+git add app/tests/test_health.py        # stage the new test file
+```
+
+Commit:
+
+```bash
+git commit -m "feat(api): add health check endpoint with database status"
+```
+
+Pre-commit hooks run automatically:
+
+```
+ruff-format...............Passed
+ruff......................Passed
+trailing-whitespace.......Passed
+end-of-file-fixer.........Passed
+[feat/51-health-check-endpoint a3f9c2b] feat(api): add health check endpoint
+ 3 files changed, 42 insertions(+)
+```
+
+All hooks pass. The commit is recorded.
+
+---
+
+#### Step 8: Push and Open a PR
+
+```bash
+git push -u origin feat/51-health-check-endpoint
+```
+
+```bash
+gh pr create \
+  --title "feat(api): add health check endpoint" \
+  --body "Adds GET /health that returns service status and database connectivity.
+
+## What
+- New \`GET /health\` endpoint returning \`{status, database}\` JSON
+- Database check runs \`SELECT 1\` to verify connectivity
+- Returns \`status: degraded\` if database is unreachable
+
+## Why
+Required for the load balancer health probe in the production deployment.
+Without this, the load balancer cannot distinguish a healthy instance
+from an unresponsive one.
+
+Closes #51" \
+  --reviewer teammate-username
+```
+
+Set auto-merge immediately so you don't have to watch for it:
+
+```bash
+gh pr merge --auto --squash
+```
+
+Switch to other work. When the reviewer approves and CI passes, the merge happens automatically.
+
+---
+
+#### Step 9: Monitor CI (Optional)
+
+If you want to watch CI run:
+
+```bash
+gh run watch
+```
+
+Or check later:
+
+```bash
+gh run list --limit 5
+```
+
+If a check fails:
+
+```bash
+gh run view --log-failed    # see only the failure output
+```
+
+Fix the issue, push, and re-run:
+
+```bash
+git add app/api/health.py
+git commit -m "fix(api): handle database connection timeout in health check"
+git push
+gh run rerun --failed
+```
+
+---
+
+#### Step 10: After the Merge — Clean Up
+
+GitHub auto-closes issue #51 via the `Closes #51` in the PR body. The remote branch is deleted automatically (if auto-delete is enabled in repository settings).
+
+```bash
+# Pull the merged commit onto local main
+git sw main && git pull
+```
+
+The `main` history now contains one clean commit:
+
+```
+feat(api): add health check endpoint (#52)
+```
+
+Delete the local branch:
+
+```bash
+git branch -D feat/51-health-check-endpoint
+```
+
+Or if you have multiple old branches:
+
+```bash
+gh-poi    # deletes all local branches whose work has been merged
+```
+
+---
+
+#### What Just Happened
+
+The entire workflow — from creating the issue to merged code — follows the same loop every time:
+
+```
+Issue → Branch → Code → Tests → Commit → PR → CI → Merge → Clean up
+```
+
+Once this loop is internalized, the tooling gets out of the way and all your attention goes to the code itself. That is the goal.
+
+**Total workflow overhead in this example:** about 4 minutes (creating issue, branching, committing, opening PR, cleaning up). The rest was coding.
+
+For your first few features, refer back to this walkthrough and to the relevant parts of the guide. After ten features, the loop runs automatically.
