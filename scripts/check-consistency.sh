@@ -22,4 +22,20 @@ if grep -R -n "git -C \"\$DOTFILES_DIR\" reset --hard origin/main" scripts/boots
     fail "bootstrap must not hard-reset dotfiles without an explicit --force-reset path"
 fi
 
+if grep -R -n -E "three (runnable setup scripts|working scripts|scripts to populate)" README.md docs; then
+    fail "workstation-scripts has two runnable setup scripts; docs must not claim three"
+fi
+
+if grep -R -n -E 'Edit `bootstrap\.sh`|^[[:space:]]*GITHUB_USER="yourusername"|^[[:space:]]*DOTFILES_REPO="git@github.com:yourusername/dotfiles\.git"' docs README.md; then
+    fail "docs must not instruct users to hard-code personal values in bootstrap.sh"
+fi
+
+if grep -R -n -E "§3\.13|See §3\.4 for the full v15/v16|bootstrap step 13|Reference Files section below|annotated versions below are identical|§K\.3" docs templates scripts/bootstrap.sh scripts/setup-desktop.sh README.md; then
+    fail "stale section references found"
+fi
+
+if grep -R -n -E 'replace every occurrence of `yourusername`|`flake\.nix` also contains `yourusername`' docs README.md; then
+    fail "docs must refer to CHANGE_ME, not yourusername, for template placeholder replacement"
+fi
+
 echo "consistency checks passed"

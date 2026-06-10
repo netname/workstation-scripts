@@ -313,7 +313,7 @@ The authoritative source is `setup-desktop.sh` in your `workstation-scripts` rep
 | Step 6 | Connect via RDP | §L.2 |
 | Step 6 | Window tiling keyboard shortcuts | §L.3 (post-login, one time) |
 
-> [!note] **VMware users** — install VMware Tools (§K.3) before running `setup-desktop.sh` if you have not already. VMware Tools enables clipboard sharing and display auto-resize between the VM and the XRDP session.
+> [!note] **VMware users** — install VMware Tools from the [VMware section in Document 2](2-Installation.md#3-vmware-tools) before running `setup-desktop.sh` if you have not already. VMware Tools enables clipboard sharing and display auto-resize between the VM and the XRDP session.
 
 ---
 

@@ -76,7 +76,7 @@
     "${pkgs.nerd-fonts.jetbrains-mono}/share/fonts/truetype/NerdFonts/JetBrainsMono";
 
   # ── Neovim config: mutable symlink outside /nix/store ───────────────────────
-  # §5.1 — LazyVim writes lazy-lock.json at runtime — it needs a mutable directory.
+  # §10.2 — LazyVim writes lazy-lock.json at runtime — it needs a mutable directory.
   # mkOutOfStoreSymlink creates ~/.config/nvim → ~/dotfiles/nvim directly,
   # bypassing the read-only /nix/store.
   home.file.".config/nvim".source =
@@ -84,7 +84,7 @@
       "${config.home.homeDirectory}/dotfiles/nvim";
 
   # ── tmux config: mutable symlink outside /nix/store ─────────────────────────
-  # §3.4 — TPM writes plugin state to ~/.tmux/plugins at runtime.
+  # §4.7 — TPM writes plugin state to ~/.tmux/plugins at runtime.
   # mkOutOfStoreSymlink creates ~/.config/tmux/tmux.conf → ~/dotfiles/tmux/tmux.conf.
   home.file.".config/tmux/tmux.conf".source =
     config.lib.file.mkOutOfStoreSymlink

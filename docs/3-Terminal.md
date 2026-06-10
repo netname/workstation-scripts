@@ -66,14 +66,14 @@ WezTerm
 tmux intercepts the connection
   Internally uses: TERM = "tmux-256color"
   Passes Tc capability via: terminal-overrides ",<your-TERM>:Tc"
-  (must match the TERM value WezTerm advertises — see §3.4)
+  (must match the TERM value WezTerm advertises — see §3.3)
         ↓
 Neovim (or any inner program)
   Sees the Tc flag → sets termguicolors = true
   Renders true 24-bit colour correctly
 ```
 
-The two tmux lines required (covered in full in Part 3 §3.4):
+The two tmux lines required (covered in full in Part 4 §4.4):
 
 ```bash
 set -g default-terminal "tmux-256color"
@@ -958,7 +958,7 @@ _Diagnosis:_
 # Look for a warning about termguicolors
 ```
 
-_Resolution:_ Verify both lines are present exactly as shown in §4.4. Reload with `prefix r`. If the issue persists, check WezTerm's `term` setting (§4.3) — if it is set to a value other than `"wezterm"` or `"xterm-256color"`, the capability chain may be broken.
+_Resolution:_ Verify both lines are present exactly as shown in §4.4. Reload with `prefix r`. If the issue persists, check WezTerm's `term` setting (§3.3) — if it is set to a value other than `"wezterm"` or `"xterm-256color"`, the capability chain may be broken.
 
 ---
 

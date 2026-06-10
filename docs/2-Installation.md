@@ -270,7 +270,7 @@ The bootstrap is idempotent — safe to re-run. See the Bootstrap Script section
 This appendix walks through creating the two repositories this guide uses and populating them from the reference material. If you are setting up this environment for the first time, do this before anything else.
 
 > [!note] **What you will have by the end of this appendix**
-> - A public `workstation-scripts` repository on GitHub containing the three runnable setup scripts
+> - A public `workstation-scripts` repository on GitHub containing two runnable setup scripts plus a local consistency check
 > - A private `dotfiles` repository on GitHub containing your personal environment declaration
 > - Both repositories verified as accessible — `curl` can fetch the scripts, SSH can reach the dotfiles
 > - A clear understanding of why each repository has the visibility it does
@@ -348,11 +348,12 @@ Make them executable:
 chmod +x scripts/bootstrap.sh scripts/setup-desktop.sh
 ```
 
-**Edit `bootstrap.sh`** — open it and set the two variables at the top:
+Do not edit `bootstrap.sh` to hard-code your personal values. The script is intentionally generic; pass your values with flags when you run it:
 
 ```bash
-GITHUB_USER="yourusername"                              # ← your GitHub username
-DOTFILES_REPO="git@github.com:yourusername/dotfiles.git"  # ← your PRIVATE dotfiles SSH URL
+bash bootstrap.sh \
+  --github-user yourusername \
+  --dotfiles-repo git@github.com:yourusername/dotfiles.git
 ```
 
 > [!important] `DOTFILES_REPO` must point to your private `dotfiles` repository using the SSH URL format (`git@github.com:...`), not the HTTPS format (`https://github.com/...`). The bootstrap clones this repository using SSH — the SSH URL is required.
@@ -423,7 +424,7 @@ mkdir -p wezterm tmux nvim/lua/config nvim/lua/plugins vscode scripts xfce4
 Create placeholder files and a `.gitignore`:
 
 ```bash
-# Nix files — copy working versions from the Reference Files section below in Step M.7
+# Nix files — copy working versions from templates/ in Step M.7
 touch flake.nix home.nix
 
 # Config files — covered in Parts 3, 4, 5 respectively
@@ -577,7 +578,7 @@ b4e5f6a Initial commit
 
 At this point:
 
-- `workstation-scripts` is public on GitHub, contains three working scripts, and is fetchable by any machine via `curl`
+- `workstation-scripts` is public on GitHub, contains the two runnable setup scripts, and is fetchable by any machine via `curl`
 - `dotfiles` is private on GitHub, contains your Nix environment declaration, and is clonable via SSH
 
 The full setup sequence from here is:
@@ -681,7 +682,7 @@ dotfiles/
       config/
       plugins/
   vscode/
-    extensions.json            # VS Code recommended extensions — install manually after setup (see §11.3)
+    extensions.json            # VS Code recommended extensions — install manually after setup (see 5-Editors.md §11.3)
   scripts/
     sessionizer                # tmux project session manager script
   xfce4/
@@ -692,9 +693,9 @@ This repository contains your identity and preferences. Keep it private.
 
 **What each file is for:**
 
-`flake.nix` is the entry point for the Nix build. It does two things: it declares _inputs_ (which version of nixpkgs and Home Manager to use), and it declares _outputs_ (your Home Manager configuration, identified by your username). When you run `hms --flake ~/dotfiles#yourusername`, Nix reads this file to know which version of Home Manager to use, which version of nixpkgs to resolve packages from, and which configuration to apply (the one identified by `yourusername`). The `flake.lock` file that accompanies it records the exact Git commit hashes for all declared inputs — this is what makes two machines with the same `flake.lock` produce identical environments. Full reference in the Reference Files section below.
+`flake.nix` is the entry point for the Nix build. It does two things: it declares _inputs_ (which version of nixpkgs and Home Manager to use), and it declares _outputs_ (your Home Manager configuration, identified by your username). When you run `hms --flake ~/dotfiles#yourusername`, Nix reads this file to know which version of Home Manager to use, which version of nixpkgs to resolve packages from, and which configuration to apply (the one identified by `yourusername`). The `flake.lock` file that accompanies it records the exact Git commit hashes for all declared inputs — this is what makes two machines with the same `flake.lock` produce identical environments. The authoritative starter is `templates/flake.nix`.
 
-`home.nix` is the declaration of your user environment: every global CLI tool, your shell configuration, your git config, your prompt. Think of it as a complete, machine-readable description of what your workstation should look like. When Home Manager evaluates it, it translates every declaration into concrete actions: downloading packages to `/nix/store`, generating `~/.zshrc` from your shell configuration, creating symlinks from generated files into your home directory. The file is structured as a Nix attribute set — keys like `home.packages`, `programs.zsh`, `programs.git`, and `programs.starship` each configure a different aspect of your environment. This is the file you edit most often. Full reference in the Reference Files section below.
+`home.nix` is the declaration of your user environment: every global CLI tool, your shell configuration, your git config, your prompt. Think of it as a complete, machine-readable description of what your workstation should look like. When Home Manager evaluates it, it translates every declaration into concrete actions: downloading packages to `/nix/store`, generating `~/.zshrc` from your shell configuration, creating symlinks from generated files into your home directory. The file is structured as a Nix attribute set — keys like `home.packages`, `programs.zsh`, `programs.git`, and `programs.starship` each configure a different aspect of your environment. This is the file you edit most often. The authoritative starter is `templates/home.nix`.
 
 `scripts/bootstrap.sh` is the script covered in Part 2. It reads `flake.nix` and `home.nix` to build your environment via Home Manager, then handles the tools that cannot be managed by Nix (Docker via apt). GUI tools (WezTerm, VS Code, Chrome, ksnip) are installed separately by `scripts/setup-desktop.sh` and are not part of the bootstrap.
 
@@ -702,11 +703,11 @@ This repository contains your identity and preferences. Keep it private.
 
 `tmux/tmux.conf` is your tmux configuration. It is symlinked to `~/.config/tmux/tmux.conf` via `mkOutOfStoreSymlink` in `home.nix` — a Home Manager helper that creates a symlink pointing directly at `~/dotfiles/tmux/tmux.conf` instead of copying the file into the read-only `/nix/store`. This means TPM can write plugin state at runtime (the symlink target stays mutable). You edit this source file directly and reload with `prefix r` — no `hms` required. Plugins are managed by TPM (`~/.tmux/plugins/tpm`); install them inside tmux with `Ctrl-Space I`. Covered in Part 3.
 
-`nvim/` starts as a placeholder directory. The bootstrap stages the LazyVim starter into it during step 10 and runs a headless plugin sync in step 11 (§2.4.3). After that, it is a mutable directory containing your Neovim/LazyVim configuration. It is symlinked to `~/.config/nvim/` via the `mkOutOfStoreSymlink` pattern in `home.nix`. Covered in Part 3.
+`nvim/` starts as a placeholder directory. The bootstrap stages the LazyVim starter into it during step 10 and runs a headless plugin sync in step 11 (§2.4.3). After that, it is a mutable directory containing your Neovim/LazyVim configuration. It is symlinked to `~/.config/nvim/` via the `mkOutOfStoreSymlink` pattern in `home.nix`. Covered in [5-Editors.md Part 10](5-Editors.md).
 
 `vscode/extensions.json` uses VS Code's native recommendations format. You install these manually after the desktop setup — see [5-Editors.md §11.3](5-Editors.md).
 
-`scripts/sessionizer` is the project session manager script. It is symlinked to `~/.local/bin/sessionizer` by the bootstrap and bound to `Ctrl-f` in tmux. Covered in Part 3.
+`scripts/sessionizer` is the project session manager script. It is symlinked to `~/.local/bin/sessionizer` by the bootstrap and bound to `Ctrl-f` in tmux. Covered in [3-Terminal.md Part 5](3-Terminal.md).
 
 `scripts/bootstrap.sh` installs all apt prerequisites and then the full environment in one run. It is the single script to fetch on any new machine.
 
@@ -714,7 +715,7 @@ This repository contains your identity and preferences. Keep it private.
 
 `xfce4/xfce4-keyboard-shortcuts.xml` is an optional backup of the XFCE4 window tiling keyboard shortcuts configured in §L.3. Not used by the bootstrap — restore manually if needed on a new desktop machine (§L.3.5).
 
-> [!tip] `flake.nix` and `home.nix` reference Complete, working implementations of both files — not snippets — are in the Reference Files section below. Read this section to understand the structure; go to the Reference Files section below to copy the files. The appendix versions are annotated and ready to use with only your username substituted.
+> [!tip] `flake.nix` and `home.nix` reference Complete, working implementations of both files — not snippets — are in `templates/flake.nix` and `templates/home.nix`. Read this section to understand the structure; copy from the templates so there is only one source of truth.
 
 ---
 
@@ -855,10 +856,10 @@ chmod +x scripts/bootstrap.sh scripts/setup-desktop.sh
 ```bash
 cd ~/dotfiles
 
-# Nix flake entry point — copy working version from the Reference Files section below
+# Nix flake entry point — copy working version from templates/flake.nix
 touch flake.nix
 
-# Home Manager config — copy working version from the Reference Files section below
+# Home Manager config — copy working version from templates/home.nix
 touch home.nix
 
 # WezTerm config — covered in Part 3
@@ -890,7 +891,7 @@ cat > vscode/extensions.json << 'EOF'
 }
 EOF
 
-# Sessionizer script — covered in Part 3
+# Sessionizer script — covered in 3-Terminal.md Part 5
 touch scripts/sessionizer
 chmod +x scripts/sessionizer
 
@@ -913,7 +914,7 @@ EOF
 
 These files must contain working content before you push. Empty files cause silent failures at runtime.
 
-**In `workstation-scripts/` — three scripts to populate:**
+**In `workstation-scripts/` — two runnable scripts to populate:**
 
 Copy the script content from each source listed below. No personal substitutions are needed in any of these — they are generic.
 
@@ -930,7 +931,7 @@ bash bootstrap.sh \
   --dotfiles-repo git@github.com:yourusername/dotfiles.git
 ```
 
-These are the only lines in `scripts/bootstrap.sh` that are personal. Everything else is generic and will not need changing.
+Those flags are the only personal values the bootstrap needs. The script file itself stays generic.
 
 Verify they are not empty:
 
@@ -941,16 +942,14 @@ wc -l scripts/bootstrap.sh scripts/setup-desktop.sh   # both must be non-zero
 
 **In `dotfiles/` — two Nix files to populate:**
 
-**`flake.nix` and `home.nix` — from the Reference Files section below:**
+**`flake.nix` and `home.nix` — from `templates/`:**
 
-Open the Reference Files section below and copy both files into your repository, substituting your username where indicated.
+Copy both files into your repository as shown in §M.7, then replace the template placeholders before bootstrapping.
 
-> [!important] Three substitutions required in `home.nix` before proceeding
-> 1. **Linux username** — replace every occurrence of `yourusername` with your actual Linux username (`whoami`). A mismatch causes the bootstrap to fail at the Home Manager step.
+> [!important] Required substitutions before proceeding
+> 1. **Linux username** — replace every `CHANGE_ME` used for `home.username`, `home.homeDirectory`, `homeConfigurations`, and the `hms` alias with your actual Linux username (`whoami`). A mismatch causes the bootstrap to fail at the Home Manager step.
 > 2. **Git name** — set `programs.git.settings.user.name` to your full name (e.g. `"Jane Smith"`).
 > 3. **Git email** — set `programs.git.settings.user.email` to the email address registered on your GitHub account. This is the address that will appear on every commit you make.
->
-> `flake.nix` also contains `yourusername` — replace it there too.
 
 Verify `flake.nix` is not empty:
 
@@ -958,7 +957,7 @@ Verify `flake.nix` is not empty:
 wc -l flake.nix
 ```
 
-Expected output: a non-zero line count. If the output is `0 flake.nix`, the file was not populated from the Reference Files section below.
+Expected output: a non-zero line count. If the output is `0 flake.nix`, the file was not populated from `templates/flake.nix`.
 
 Verify `home.nix` is not empty:
 
@@ -966,7 +965,7 @@ Verify `home.nix` is not empty:
 wc -l home.nix
 ```
 
-Expected output: a non-zero line count. If the output is `0 home.nix`, the file was not populated from the Reference Files section below.
+Expected output: a non-zero line count. If the output is `0 home.nix`, the file was not populated from `templates/home.nix`.
 
 #### Step 6: Populate the Remaining Config Files
 
@@ -978,7 +977,7 @@ If you want a fully working environment immediately after the bootstrap, populat
 
 - `wezterm/wezterm.lua` → [3-Terminal.md — Complete wezterm.lua Reference](3-Terminal.md)
 - `tmux/tmux.conf` → [3-Terminal.md — Complete tmux.conf Reference](3-Terminal.md)
-- `scripts/sessionizer` → Part 3 §3.5
+- `scripts/sessionizer` → [3-Terminal.md §5.5](3-Terminal.md)
 
 #### Step 7: Commit and Push Both Repositories
 
@@ -1035,310 +1034,51 @@ b4e5f6a Initial commit
 
 ## Understanding your `flake.nix` and `home.nix`
 
-You already copied these files from `templates/` in §M.7. This section explains what every block does, why it is structured the way it is, and what to watch out for when you start customising. Read it now before running the bootstrap, or return to it later when you want to understand a specific setting.
-
-The annotated versions below are identical in structure to the templates — the difference is that the templates use `CHANGE_ME` placeholders (which you have already substituted), while the examples here use `yourusername` to show what the substituted result should look like.
+You already copied these files from `templates/` in §M.7. The templates are the source of truth; this section explains the major blocks so you know what you are editing later.
 
 ### `flake.nix`
 
-```nix
-# dotfiles/flake.nix
-{
-  description = "Workstation Home Manager Flake";
+`templates/flake.nix` has three jobs:
 
-  inputs = {
-    # nixos-unstable is the default here because devenv's own nixpkgs input
-    # also tracks unstable, and using the same channel avoids version skew
-    # between Home Manager packages and devenv packages. If you need stricter
-    # stability guarantees, switch to a pinned release channel (e.g.
-    # "github:nixos/nixpkgs/nixos-24.11") and update devenv's nixpkgs input
-    # to match — mismatched channels can cause binary cache misses.
-    # nixos-unstable gives newer packages; pinned channels give more stability.
-    #
-    # To pin a specific nixpkgs commit (maximum reproducibility):
-    #   1. Find a green "passing" commit at https://status.nixos.org
-    #   2. Copy its full commit SHA
-    #   3. Set: nixpkgs.url = "github:nixos/nixpkgs/<commit-sha>";
-    #
-    # The current value (nixos-unstable) is a good default for most workstations.
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+| Block | Purpose | What you edit |
+|---|---|---|
+| `inputs.nixpkgs` | Chooses the nixpkgs channel your global tools come from | Usually leave as `nixos-unstable` unless you intentionally pin a release or commit |
+| `inputs.home-manager` | Pulls Home Manager and makes it follow the same nixpkgs input | Usually nothing |
+| `homeConfigurations."CHANGE_ME"` | Names the Home Manager configuration the bootstrap applies | Replace `CHANGE_ME` with your Linux username from `whoami` |
 
-    home-manager = {
-      url = "github:nix-community/home-manager";
-      # Use the same nixpkgs as above to avoid version conflicts
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+The bootstrap runs:
 
-  outputs = { nixpkgs, home-manager, ... }: {
-    homeConfigurations."yourusername" =                 # ← substitute username
-      home-manager.lib.homeManagerConfiguration {
-        pkgs = nixpkgs.legacyPackages.x86_64-linux;    # ← change arch if needed
-        modules = [ ./home.nix ];
-      };
-  };
-}
+```bash
+nix run github:nix-community/home-manager -- \
+  switch --flake "$DOTFILES_DIR#${LINUX_USER}"
 ```
+
+That `#${LINUX_USER}` suffix must match the `homeConfigurations."<name>"` key in `flake.nix`. If it does not, Home Manager fails with `error: attribute '<name>' missing`.
 
 ### `home.nix`
 
-```nix
-# dotfiles/home.nix
-{ config, pkgs, ... }:
+`templates/home.nix` is the declaration of your user environment. The important sections are:
 
-{
-  # ── Identity ────────────────────────────────────────────────────────────────
-  home.username = "yourusername";                      # ← substitute username
-  home.homeDirectory = "/home/yourusername";           # ← substitute username
+| Block | Owns | Notes |
+|---|---|---|
+| `home.username`, `home.homeDirectory`, `home.stateVersion` | Your Linux user identity and Home Manager compatibility state | Replace `CHANGE_ME`; do not casually change `home.stateVersion` after first activation |
+| `home.packages` | Global CLI tools available in every shell | Personal/global tools go here; project-versioned tools belong in `devenv.nix` |
+| `home.sessionVariables` | Default editor and related environment variables | Sets `EDITOR` and `VISUAL` to Neovim |
+| `home.file.".config/nvim"` | Mutable Neovim config symlink | Uses `mkOutOfStoreSymlink` because LazyVim writes lock/state files at runtime |
+| `home.file.".config/tmux/tmux.conf"` | Mutable tmux config symlink | Keeps TPM plugin state writable while still versioning `tmux.conf` |
+| `programs.zsh` | Shell aliases and initialization order | Preserve the documented order: PATH, Nix profile, direnv, `cd` alias, zoxide, fzf, Starship |
+| `programs.git` | Global git identity, pager, aliases | Set name/email before bootstrapping; do not use `git config --global` for the same settings |
+| `programs.direnv` and `programs.fzf` | Shell integrations | Direnv integration is intentionally manual in `initContent`; fzf integration is generated by Home Manager |
 
-  # ── Packages: global CLI tools ──────────────────────────────────────────────
-  # These are available in every shell, regardless of project.
-  # Rule: if a tool's version doesn't matter per project, it goes here.
-  # Rule: if a tool's version matters per project, it goes in devenv.nix.
-  home.packages = with pkgs; [
-    # ── Git and GitHub tooling ───
-    git
-    gh          # GitHub CLI
-    lazygit     # Visual git TUI
-    delta       # Syntax-highlighted diff viewer
+The big idea: `home.nix` owns stable, global, personal configuration. Fast-changing user-managed dotfiles (`wezterm.lua`, `tmux.conf`, `sessionizer`, Neovim files) still live in `~/dotfiles`, but several are symlinked directly so they can reload without a Home Manager rebuild.
 
-    # ── Shell utilities ──────────
-    fzf         # Fuzzy finder (required by sessionizer)
-    zoxide      # Smart directory jumper
-    bat         # cat with syntax highlighting
-    eza         # Modern ls replacement
-    ripgrep     # Fast recursive grep (rg)
-    fd          # Fast find replacement
-    just        # Task runner — global fallback for use outside any devenv project; devenv.nix pins the version per project
-    jq          # JSON processor
+When you change `home.nix`, the apply command is:
 
-    # ── Neovim and dependencies ──
-    neovim
-    tree-sitter # Required by nvim-treesitter
-    gcc         # C compiler for treesitter parser compilation
-
-    # ── Clipboard providers ──────
-    # xclip for X11, wl-clipboard for Wayland.
-    # Both are included; each is a no-op on the wrong display server.
-    xclip
-    wl-clipboard
-
-    # ── Shell and terminal ───────
-    zsh
-    tmux
-    starship    # Cross-shell prompt
-
-    # ── Python package manager ───
-    uv          # Fast Python package manager
-
-    # ── Node.js (global) ─────────
-    # Available in all shells. Project-specific Node (e.g. nodejs_24 in devenv.nix)
-    # shadows this via direnv $PATH prepend, so the two versions coexist without conflict.
-    nodejs_22
-
-    # ── Devenv ───────────────────
-    devenv      # Per-project Nix environments
-
-    # ── Nix utilities ────────────
-    nixpkgs-fmt # Nix file formatter
-
-    # ── Fonts ────────────────────
-    # Pinned via flake.lock; replaces the manual curl/unzip step.
-    nerd-fonts.jetbrains-mono
-  ];
-
-  # ── Default editor ──────────────────────────────────────────────────────────
-  home.sessionVariables = {
-    EDITOR = "nvim";
-    VISUAL = "nvim";
-  };
-
-  # ── Neovim config: mutable symlink outside /nix/store ──────────────────────
-  # LazyVim writes lazy-lock.json at runtime — it needs a mutable directory.
-  # mkOutOfStoreSymlink creates ~/.config/nvim → ~/dotfiles/nvim directly,
-  # bypassing the read-only /nix/store.
-  home.file.".config/nvim".source =
-    config.lib.file.mkOutOfStoreSymlink
-      "${config.home.homeDirectory}/dotfiles/nvim";
-
-  # ── Fonts: symlink into ~/.local/share/fonts for Flatpak apps ───────────────
-  # Flatpak sandboxes cannot access ~/.nix-profile/share/fonts; ~/.local/share/fonts
-  # is allowed. WezTerm is installed as a Flatpak by setup-desktop.sh.
-  home.file.".local/share/fonts/JetBrainsMono".source =
-    "${pkgs.nerd-fonts.jetbrains-mono}/share/fonts/truetype/NerdFonts/JetBrainsMono";
-
-  programs.home-manager.enable = true;
-
-  # ── Shell: zsh ──────────────────────────────────────────────────────────────
-  programs.zsh = {
-    enable = true;
-
-    # Shell initialisation — ORDER MATTERS (see 3-Terminal.md §7.4)
-    initContent = ''
-      # 1. PATH additions first — binaries below need to be findable
-      export PATH="$HOME/.local/bin:$PATH"
-      export PATH="$HOME/.nix-profile/bin:$PATH"
-
-      # 2. Nix environment
-      . "$HOME/.nix-profile/etc/profile.d/nix.sh" 2>/dev/null || true
-
-      # 3. direnv hook — MUST be early (tmux fires before .zshrc finishes)
-      eval "$(direnv hook zsh)"
-
-      # 4. cd alias — MUST come before zoxide init (see 3-Terminal.md §7.4)
-      # Remove this line if you prefer to invoke zoxide as `z` directly.
-      alias cd='z'
-
-      # 5. zoxide — after the cd alias
-      eval "$(zoxide init zsh)"
-
-      # 6. fzf options
-      # Shell key bindings (Ctrl-R, Ctrl-T, Alt-C) are sourced automatically by
-      # Home Manager via programs.fzf.enableZshIntegration = true — do not add
-      # a manual `source ~/.fzf.zsh` line here; it is redundant and may not
-      # exist when fzf is installed via Nix rather than the fzf install script.
-      export FZF_DEFAULT_OPTS="
-        --height 40%
-        --layout=reverse
-        --border
-        --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8
-        --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
-        --color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8"
-
-      # 7. Starship — MUST be last (wraps PS1; anything after breaks the prompt)
-      eval "$(starship init zsh)"
-
-      # 8. Remaining aliases — after all tool inits
-      alias ls='eza --color=auto --icons'
-      alias cat='bat'
-      # hms: home-manager with flake path baked in.
-      # With flakes, home-manager always needs --flake; this alias makes it ergonomic.
-      alias hms='home-manager switch --flake ~/dotfiles#yourusername'  # ← substitute username
-
-      # ── Shell utility functions ──────────────────────────────────
-      repo-status() {
-        echo "════ Local State ══════════════════════════════"
-        git branch -vv
-        echo ""
-        git st
-        git stash list
-        echo ""
-        echo "════ Recent Commits ═══════════════════════════"
-        git lg -5
-        echo ""
-        echo "════ PR & Review State ════════════════════════"
-        gh pr status
-        echo ""
-        echo "════ Recent CI ════════════════════════════════"
-        gh run list --limit 3
-      }
-
-      gpr() {
-        local pr
-        pr=$(
-          gh pr list \
-            --json number,title,author,headRefName \
-            --template '{{range .}}{{tablerow .number .title .author.login .headRefName}}{{end}}' \
-          | fzf \
-            --prompt="  checkout PR: " \
-            --pointer="▶" \
-            --preview="gh pr view {1}" \
-            --preview-window=right:60%:wrap \
-            --border=rounded \
-            --height=60% \
-          | awk '{print $1}'
-        )
-        [ -n "$pr" ] && gh pr checkout "$pr"
-      }
-
-      poi() {
-        echo "Fetching merged branches..."
-        git fetch --prune
-        git branch --merged main \
-          | grep -vE '^\*|main|master|develop' \
-          | xargs -r git branch -d
-        echo "Done. Remaining local branches:"
-        git branch
-      }
-    '';
-  };
-
-  # ── direnv: nix-direnv for fast devenv activation ──────────────────────────
-  programs.direnv = {
-    enable = true;
-    # enableZshIntegration is intentionally false here.
-    # When true, Home Manager appends `eval "$(direnv hook zsh)"` at the END
-    # of .zshrc — but direnv must be initialised EARLY (position 3 in initContent)
-    # so that tmux pane shells have it active before the initial window command
-    # fires. The hook is added manually at the correct position in initContent above.
-    # Setting this to true would produce a duplicate hook at the wrong position.
-    enableZshIntegration = false;
-    nix-direnv.enable = true;
-  };
-
-  # ── fzf: shell integration ──────────────────────────────────────────────────
-  programs.fzf = {
-    enable = true;
-    enableZshIntegration = true;
-  };
-
-  # ── tmux config: mutable symlink outside /nix/store ────────────────────────
-  # TPM writes plugin state to ~/.tmux/plugins at runtime — it needs a mutable
-  # location. mkOutOfStoreSymlink creates ~/.config/tmux/tmux.conf →
-  # ~/dotfiles/tmux/tmux.conf directly, bypassing the read-only /nix/store.
-  # Plugins are declared and installed by TPM inside tmux.conf itself.
-  home.file.".config/tmux/tmux.conf".source =
-    config.lib.file.mkOutOfStoreSymlink
-      "${config.home.homeDirectory}/dotfiles/tmux/tmux.conf";
-
-  # ── git: global config ──────────────────────────────────────────────────────
-  # !! EDIT user.name and user.email before running the bootstrap !!
-  programs.git = {
-    enable = true;
-    # user.name and user.email are declared here — bootstrap does NOT write git config
-    settings = {
-      user = {
-        name  = "Your Name";               # ← your full name (e.g. "Jane Smith")
-        email = "you@example.com";         # ← email registered on your GitHub account
-      };
-      core.pager    = "delta";
-      delta = {
-        side-by-side  = true;
-        line-numbers  = true;
-        navigate      = true;
-      };
-      init.defaultBranch = "main";
-      pull.rebase = true;
-      alias = {
-        sw    = "switch";
-        co    = "checkout -b";
-        st    = "status --short";
-        pushf = "push --force-with-lease --force-if-includes";
-        lg    = "log --oneline --graph --decorate --all";
-      };
-    };
-    # Silence the "no signing format" warning emitted by newer Home Manager versions
-    signing.format = null;
-  };
-
-  # ── Starship prompt ─────────────────────────────────────────────────────────
-  programs.starship = {
-    enable = true;
-    # Minimal config — customize further to taste
-    settings = {
-      add_newline = false;
-      character = {
-        success_symbol = "[➜](bold green)";
-        error_symbol   = "[➜](bold red)";
-      };
-    };
-  };
-
-  # ── State version ───────────────────────────────────────────────────────────
-  # Do not change this after initial setup — it controls state migration behaviour
-  home.stateVersion = "24.05";
-}
+```bash
+hms
 ```
+
+Then verify the changed tool or setting, commit the file, and push.
 
 ---
 

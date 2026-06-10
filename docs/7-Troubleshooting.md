@@ -84,7 +84,7 @@ fc-list | grep JetBrains | head -3
 " Look for a termguicolors warning
 ```
 
-**Resolution:** Verify both lines are present in `tmux.conf` and that the `terminal-overrides` value matches your WezTerm `term` setting ([3-Terminal.md §4.4](3-Terminal.md)):
+**Resolution:** Verify both lines are present in `tmux.conf` and that the `terminal-overrides` value matches your WezTerm `term` setting ([3-Terminal.md §4.4](3-Terminal.md); the WezTerm `term` tradeoff is in [3-Terminal.md §3.3](3-Terminal.md)):
 
 ```bash
 set -g default-terminal "tmux-256color"
@@ -116,7 +116,7 @@ Reload with `prefix r`. Verify: `tmux show-options -g escape-time` must output `
 
 ### LazyVim Shows Errors on First Open
 
-**Symptom:** Neovim opens with red error messages about missing plugins or modules. **Cause:** The headless plugin sync in bootstrap step 13 failed silently. **Resolution:** Run the sync interactively:
+**Symptom:** Neovim opens with red error messages about missing plugins or modules. **Cause:** The headless plugin sync in bootstrap step 11 failed or timed out. **Resolution:** Run the sync interactively:
 
 ```vim
 :Lazy sync

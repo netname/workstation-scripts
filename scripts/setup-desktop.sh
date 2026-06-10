@@ -17,7 +17,7 @@
 #   10. Set WezTerm as XFCE default terminal + Ctrl+Alt+T shortcut
 #
 # VS Code extensions are NOT installed by this script — install them manually
-# after first login (see §11.3 of the guide):
+# after first login (see docs/5-Editors.md §11.3):
 #   jq -r '.recommendations[]' ~/dotfiles/vscode/extensions.json | xargs -I{} code --install-extension {}
 #
 # JetBrainsMono Nerd Font is installed by Home Manager (home.nix → nerd-fonts.jetbrains-mono).

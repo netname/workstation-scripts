@@ -242,7 +242,7 @@ These tools are configured in `home.nix` and rebuilt by Home Manager:
 
 - **Shell**: `zsh` and all its initialization hooks
 - **Shell prompt**: Starship
-- **Direnv**: the hook that runs `eval "$(direnv hook zsh)"` — placed manually at position 3 in `initContent` rather than via `enableZshIntegration`, so it loads early enough for tmux pane shells (see §3.4)
+- **Direnv**: the hook that runs `eval "$(direnv hook zsh)"` — placed manually at position 3 in `initContent` rather than via `enableZshIntegration`, so it loads early enough for tmux pane shells (see [3-Terminal.md §7.4](3-Terminal.md))
 - **Git**: `user.name`, `user.email`, delta as pager, standard aliases
 - **Delta**: diff pager configuration
 - **All global CLI binaries**: `gh`, `lazygit`, `fzf`, `bat`, `eza`, `ripgrep`, `fd`, `uv`, `just`, `tmux` (the binary), Neovim (the binary), `tree-sitter`, `gcc`, `xclip`/`wl-clipboard`
@@ -419,7 +419,7 @@ Devenv builds on Nix to provide declarative, per-project development environment
 
   # For ERPNext v15 — use languages.python with version = "3.11".
   # For ERPNext v16 — omit this block; uv manages Python 3.14 instead.
-  # See §3.4 for the full v15/v16 split and the BENCH_USE_UV explanation.
+  # See [4-Projects.md §8.4](4-Projects.md) for the full v15/v16 split and the BENCH_USE_UV explanation.
   languages.python = {
     enable = true;
     version = "3.11";
@@ -468,7 +468,7 @@ Commit this file to the repository. Every developer who clones the repo and runs
 - Stateful services like MariaDB or Redis (those go in `docker-compose.yml` — §1.8)
 - `debugpy` — this is a critical exception covered in detail in [5-Editors.md §10.13](5-Editors.md)
 
-> [!warning] The `debugpy` exception `debugpy` cannot go in `devenv.nix packages`. It requires special installation into the project's Python virtualenv. Full explanation and setup in §3.13.
+> [!warning] The `debugpy` exception `debugpy` cannot go in `devenv.nix packages`. It requires special installation into the project's Python virtualenv. Full explanation and setup in [5-Editors.md §10.13](5-Editors.md).
 
 ---
 
@@ -493,7 +493,7 @@ The other half of the boundary: your application code runs on your workstation, 
 Running your Python application server inside a Docker container during development creates several problems:
 
 - **Hot-reload breaks.** File watchers inside a container watch container filesystems, not host filesystems. Volume mounts introduce latency and inotify edge cases.
-- **Debuggers cannot attach cleanly.** DAP debuggers (§3.13) attach to a running Python process. Attaching through a container boundary requires extra configuration that almost never works perfectly.
+- **Debuggers cannot attach cleanly.** DAP debuggers ([5-Editors.md §10.13](5-Editors.md)) attach to a running Python process. Attaching through a container boundary requires extra configuration that almost never works perfectly.
 - **LSPs cannot resolve imports.** Pyright runs on your workstation and needs to read your project's Python files. If those files are inside a container, Pyright cannot see them without workarounds that add more complexity.
 
 The correct model:
@@ -547,7 +547,7 @@ This is the reference you will reach for after initial setup. Every question a d
 |Add a new global CLI tool|`home.nix` packages list|`hms`|
 |Add a new project runtime or tool|`devenv.nix` packages|Save the file; Direnv re-activates|
 |Change Python version for a project (v15)|`devenv.nix` `languages.python.version`|`devenv update`|
-|Change Python version for a project (v16)|`uv python install <version>` — no `languages.python` block exists|See §3.4|
+|Change Python version for a project (v16)|`uv python install <version>` — no `languages.python` block exists|See [4-Projects.md §8.4](4-Projects.md)|
 |Change shell prompt appearance|`home.nix` `programs.starship`|`hms`|
 |Change terminal font, colors, or padding|`~/dotfiles/wezterm/wezterm.lua`|`SUPER+SHIFT+R`|
 |Change tmux prefix key or keybindings|`~/dotfiles/tmux/tmux.conf`|`prefix r`|
