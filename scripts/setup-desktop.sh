@@ -26,14 +26,105 @@
 # After this script: reboot, then connect via RDP (see §Installation Step 6).
 set -euo pipefail
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 step() { echo -e "${GREEN}▶ $1${NC}"; }
 ok()   { echo -e "${GREEN}✓ $1${NC}"; }
 warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
+die()  { echo -e "${RED}✗ $1${NC}" >&2; exit 1; }
 
-# !! EDIT THIS to your GitHub username before running !!
-GITHUB_USER="yourusername"
-DOTFILES_DIR="$HOME/dotfiles"
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
+
+usage() {
+    cat <<'EOF'
+Usage: setup-desktop.sh [options]
+
+Options:
+  --dotfiles-dir PATH      Local dotfiles checkout path (default: ~/dotfiles)
+  -h, --help               Show this help
+
+Environment variable with the same name is also supported:
+  DOTFILES_DIR
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --dotfiles-dir)
+            [ "$#" -ge 2 ] || die "--dotfiles-dir requires a value"
+            DOTFILES_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "Unknown option: $1 (run --help)"
+            ;;
+    esac
+done
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
+}
+
+validate_config() {
+    [ -n "$DOTFILES_DIR" ] || die "DOTFILES_DIR cannot be empty"
+    case "$DOTFILES_DIR" in
+        /*) ;;
+        *) die "DOTFILES_DIR must be an absolute path" ;;
+    esac
+    [ "$DOTFILES_DIR" != "/" ] || die "DOTFILES_DIR cannot be /"
+    [ -d "$DOTFILES_DIR" ] || die "$DOTFILES_DIR does not exist. Run bootstrap.sh first."
+    [ -d "$DOTFILES_DIR/.git" ] || die "$DOTFILES_DIR exists but is not a git repository"
+    [ -f "$DOTFILES_DIR/flake.nix" ] || die "$DOTFILES_DIR/flake.nix not found. Run bootstrap.sh first."
+    [ -f "$DOTFILES_DIR/home.nix" ] || die "$DOTFILES_DIR/home.nix not found. Run bootstrap.sh first."
+}
+
+validate_host() {
+    require_command apt-get
+    require_command systemctl
+    require_command getent
+
+    [ -r /etc/os-release ] || die "/etc/os-release not found; this script supports Ubuntu 22.04 and 24.04"
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    [ "${ID:-}" = "ubuntu" ] || die "Unsupported OS: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04 or 24.04."
+    case "${VERSION_ID:-}" in
+        22.04|24.04) ;;
+        *) die "Unsupported Ubuntu version: ${VERSION_ID:-unknown}. Use Ubuntu 22.04 or 24.04." ;;
+    esac
+
+    case "$(uname -m)" in
+        x86_64) ;;
+        *) die "Unsupported architecture: $(uname -m). This desktop script installs amd64 GUI packages." ;;
+    esac
+
+    [ -d /run/systemd/system ] || die "systemd does not appear to be running"
+    getent hosts github.com >/dev/null || die "Cannot resolve github.com; check internet/DNS before desktop setup"
+}
+
+print_config() {
+    echo "Resolved configuration:"
+    echo "  Dotfiles dir: $DOTFILES_DIR"
+    echo ""
+}
+
+echo -e "${GREEN}Starting desktop setup...${NC}"
+step "Running preflight checks"
+validate_config
+validate_host
+print_config
+sudo -v
+ok "Preflight checks passed"
+
+if [ ! -f "$DOTFILES_DIR/wezterm/wezterm.lua" ]; then
+    warn "$DOTFILES_DIR/wezterm/wezterm.lua not found; WezTerm will use defaults until you add it"
+fi
+
+step "Updating apt metadata"
+sudo apt-get update -qq
+ok "apt metadata updated"
 
 # ── 1. XFCE4 ─────────────────────────────────────────────────────────────────
 step "Installing XFCE4"
@@ -61,11 +152,11 @@ sudo systemctl enable xrdp
 sudo adduser xrdp ssl-cert
 
 # XFCE session files – tell XRDP which desktop to launch
-echo "startxfce4" > ~/.xsession
+echo "startxfce4" > "$HOME/.xsession"
 {
     echo "export DESKTOP_SESSION=xfce"
     echo "export XDG_SESSION_DESKTOP=xfce"
-} >> ~/.xsessionrc
+} >> "$HOME/.xsessionrc"
 
 sudo systemctl restart xrdp
 ok "XRDP installed and configured"
@@ -143,8 +234,9 @@ fi
 # breaking the mkhl.direnv extension and devenv PATH resolution).
 step "Installing VS Code"
 if ! command -v code &>/dev/null; then
+    sudo install -m 0755 -d /etc/apt/keyrings
     wget -qO- https://packages.microsoft.com/keys/microsoft.asc \
-        | gpg --dearmor \
+        | gpg --batch --yes --dearmor \
         | sudo dd of=/etc/apt/keyrings/packages.microsoft.gpg >/dev/null 2>&1
     echo "deb [arch=amd64,arm64,armhf \
 signed-by=/etc/apt/keyrings/packages.microsoft.gpg] \
@@ -197,6 +289,12 @@ echo -e "${GREEN}✅ Desktop setup complete.${NC}"
 echo ""
 echo "Next steps:"
 echo "  1. Reboot to activate the display manager: sudo reboot"
-echo "  2. Connect via RDP from Windows (see §Installation Step 6 for settings)"
-echo "  3. Ctrl+Alt+T opens WezTerm; configure tiling shortcuts via §Installation Step 6"
+echo "  2. Connect via RDP from Windows (see docs/6-Desktop.md §L.2 for settings)"
+echo "  3. Ctrl+Alt+T opens WezTerm; configure tiling shortcuts via docs/6-Desktop.md §L.3"
+echo ""
+echo "Verification commands after reboot:"
+echo "  systemctl status xrdp --no-pager"
+echo "  flatpak list --user | grep wezterm"
+echo "  code --version"
+echo "  readlink ~/.config/wezterm/wezterm.lua"
 warn "Do not keep a local XFCE session open while an XRDP session is active."

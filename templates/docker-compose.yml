@@ -1,0 +1,61 @@
+# docker-compose.yml — stateful services (databases, caches, queues)
+# Copy this file to the root of your project repository and commit it.
+#
+# Principle: Devenv owns tools. Docker Compose owns state.
+# Your application code runs on the host (in the Devenv shell).
+# Databases and caches run in Docker with named volumes for persistence.
+# See docs/1-Stack.md §1.8 for the full reasoning.
+#
+# Usage:
+#   docker compose up -d           # start all services in the background
+#   docker compose ps              # check service status
+#   docker compose logs -f mariadb # tail logs from a specific service
+#   docker compose down            # stop services (data preserved in volumes)
+#   docker compose down -v         # stop AND delete all data (destructive)
+
+services:
+
+  mariadb:
+    image: mariadb:11.8
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: mydb
+      MARIADB_USER: myuser
+      MARIADB_PASSWORD: mypassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Uncomment if your project uses a separate Redis instance for queuing:
+  # redis-queue:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6380:6379"
+  #   volumes:
+  #     - redis_queue_data:/data
+
+volumes:
+  mariadb_data:
+  redis_data:
+  # redis_queue_data:
