@@ -1,6 +1,6 @@
 # workstation-scripts
 
-[![CI](https://github.com/yourusername/workstation-scripts/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/workstation-scripts/actions/workflows/ci.yml)
+[![CI](https://github.com/netname/workstation-scripts/actions/workflows/ci.yml/badge.svg)](https://github.com/netname/workstation-scripts/actions/workflows/ci.yml)
 
 Public half of a two-repository workstation setup. Contains the bootstrap scripts and starter templates that turn a fresh Ubuntu machine into a reproducible development environment using Nix, Home Manager, Devenv, and Docker Compose.
 
@@ -13,7 +13,19 @@ Public half of a two-repository workstation setup. Contains the bootstrap script
 
 Scripts in this repo are fetched anonymously by `curl` on a fresh machine that has no SSH key yet. Your personal config stays private in your dotfiles repo, cloned only after an SSH key is registered. See [docs/0-Overview.md](docs/0-Overview.md) for the full bootstrap flow.
 
-## Quick start
+## Which path should I take?
+
+| Situation | Start here |
+|---|---|
+| New user, no repositories, or no dotfiles yet | Read [docs/0-Overview.md](docs/0-Overview.md), then follow [docs/2-Installation.md](docs/2-Installation.md) |
+| Already have `workstation-scripts` and a populated `dotfiles` repo | Use the quick start below |
+| Adding another machine from existing dotfiles | Use the quick start below, or read [docs/2-Installation.md §2.4](docs/2-Installation.md#24-the-bootstrap--one-command-to-a-working-workstation) |
+| Want a graphical desktop | Run the headless bootstrap first, then follow [docs/6-Desktop.md](docs/6-Desktop.md) |
+
+> [!important]
+> If you do not already have both repositories, do not run the bootstrap yet. The bootstrap expects a pushed private `dotfiles` repository with populated `flake.nix` and `home.nix`; it does not create that repository for you. First-time setup is covered in [docs/2-Installation.md](docs/2-Installation.md).
+
+## Quick start for existing repos
 
 **Prerequisites:** Ubuntu 22.04 or 24.04 (bare metal, VM, or cloud). An SSH key registered on GitHub — generate one if you don't have it:
 
@@ -63,7 +75,7 @@ workstation-scripts/
 
 ## Templates
 
-Copy these into your private `dotfiles` repository as a starting point:
+Copy these into your private `dotfiles` repository as a starting point. First-time users do this as part of the repository setup flow in [docs/2-Installation.md](docs/2-Installation.md); the quick start above assumes this has already happened.
 
 | File | Destination in dotfiles | Purpose |
 |---|---|---|

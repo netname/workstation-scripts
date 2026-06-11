@@ -1718,8 +1718,8 @@ if ! command -v zsh &>/dev/null && [ ! -x "$HOME/.nix-profile/bin/zsh" ]; then
 fi
 
 # Source the new profile so subsequent steps find HM-installed binaries.
-# shellcheck disable=SC1090
 if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+    # shellcheck disable=SC1091
     . "$HOME/.nix-profile/etc/profile.d/nix.sh"
 else
     warn "Nix profile script not found – HM-installed binaries may not be on PATH"
