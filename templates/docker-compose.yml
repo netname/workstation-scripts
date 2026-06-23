@@ -4,9 +4,10 @@
 # Principle: Devenv owns tools. Docker Compose owns state.
 # Your application code runs on the host (in the Devenv shell).
 # Databases and caches run in Docker with named volumes for persistence.
-# See docs/1-Stack.md §1.8 for the full reasoning.
+# See docs/explanation/project-tooling-model.md for the full reasoning.
 #
 # Usage:
+#   cp .env.example .env        # then edit passwords/ports as needed
 #   docker compose up -d           # start all services in the background
 #   docker compose ps              # check service status
 #   docker compose logs -f mariadb # tail logs from a specific service
@@ -19,12 +20,12 @@ services:
     image: mariadb:11.8
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: root
-      MARIADB_DATABASE: mydb
-      MARIADB_USER: myuser
-      MARIADB_PASSWORD: mypassword
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD in .env}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-mydb}
+      MARIADB_USER: ${MARIADB_USER:-myuser}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?Set MARIADB_PASSWORD in .env}
     ports:
-      - "3306:3306"
+      - "127.0.0.1:${MARIADB_PORT:-3306}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     healthcheck:
@@ -37,7 +38,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -51,7 +52,7 @@ services:
   #   image: redis:7-alpine
   #   restart: unless-stopped
   #   ports:
-  #     - "6380:6379"
+  #     - "127.0.0.1:${REDIS_QUEUE_PORT:-6380}:6379"
   #   volumes:
   #     - redis_queue_data:/data
 

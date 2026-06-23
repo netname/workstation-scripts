@@ -13,7 +13,7 @@
 #   4.  Installs Nix (Determinate Systems installer)
 #   5.  Applies Home Manager from your flake (owns git identity, delta config,
 #         git aliases, zsh, starship, direnv, fzf, JetBrainsMono
-#         Nerd Font, and all CLI packages declared in home.nix)
+#         Nerd Font, and all CLI packages declared in Home Manager modules)
 #   6.  Installs Docker Engine
 #   7.  Verifies GitHub CLI (installed by Home Manager; apt fallback)
 #   8.  Configures gh pager (delta – not manageable via Home Manager)
@@ -25,13 +25,13 @@
 # Run setup-desktop.sh after this script if you want a graphical environment.
 #
 # NOTE: git identity, delta pager, aliases, and JetBrainsMono
-# Nerd Font are managed entirely by Home Manager via home.nix. The bootstrap
+# Nerd Font are managed entirely by Home Manager modules. The bootstrap
 # script does NOT write any git config or install fonts manually. Tmux plugins
 # are declared in tmux.conf and installed by TPM when tmux loads that config.
 #
 # PREREQUISITE: Generate and register your SSH key on GitHub before running
-# this script. The bootstrap runs fully automatically with no pauses once the
-# key is in place.
+# this script. After any sudo password prompt, the bootstrap runs without
+# interactive pauses once the key is in place.
 
 set -euo pipefail
 
@@ -123,6 +123,22 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
 }
 
+ensure_known_host_entry() {
+    local entry="$1"
+    grep -qxF "$entry" "$HOME/.ssh/known_hosts" 2>/dev/null || \
+        printf '%s\n' "$entry" >> "$HOME/.ssh/known_hosts"
+}
+
+seed_github_known_hosts() {
+    # Official GitHub SSH host keys:
+    # https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+    touch "$HOME/.ssh/known_hosts"
+    chmod 600 "$HOME/.ssh/known_hosts"
+    ensure_known_host_entry "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+    ensure_known_host_entry "github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg="
+    ensure_known_host_entry "github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk="
+}
+
 validate_config() {
     [ -n "$GITHUB_USER" ] || die "Set GITHUB_USER via environment or --github-user"
     [ "$GITHUB_USER" != "yourusername" ] || die "Replace the example GITHUB_USER value"
@@ -150,13 +166,13 @@ validate_host() {
     require_command systemctl
     require_command getent
 
-    [ -r /etc/os-release ] || die "/etc/os-release not found; this script supports Ubuntu 22.04 and 24.04"
+    [ -r /etc/os-release ] || die "/etc/os-release not found; this script supports Ubuntu 22.04, 24.04, and 26.04"
     # shellcheck disable=SC1091
     . /etc/os-release
-    [ "${ID:-}" = "ubuntu" ] || die "Unsupported OS: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04 or 24.04."
+    [ "${ID:-}" = "ubuntu" ] || die "Unsupported OS: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04, 24.04, or 26.04."
     case "${VERSION_ID:-}" in
-        22.04|24.04) ;;
-        *) die "Unsupported Ubuntu version: ${VERSION_ID:-unknown}. Use Ubuntu 22.04 or 24.04." ;;
+        22.04|24.04|26.04) ;;
+        *) die "Unsupported Ubuntu version: ${VERSION_ID:-unknown}. Use Ubuntu 22.04, 24.04, or 26.04." ;;
     esac
 
     case "$(uname -m)" in
@@ -177,6 +193,26 @@ print_config() {
     echo "  SSH key path:   $SSH_KEY_PATH"
     echo "  Force reset:    $FORCE_RESET"
     echo ""
+}
+
+ensure_dotfiles_compat_link() {
+    local default_dir="$HOME/dotfiles"
+    local target_real
+    local default_real
+
+    [ "$DOTFILES_DIR" != "$default_dir" ] || return 0
+
+    target_real="$(cd "$DOTFILES_DIR" && pwd -P)"
+
+    if [ -e "$default_dir" ] || [ -L "$default_dir" ]; then
+        [ -d "$default_dir" ] || die "$default_dir exists but is not a directory or symlink to a directory"
+        default_real="$(cd "$default_dir" && pwd -P)"
+        [ "$default_real" = "$target_real" ] || die "$default_dir already points to a different directory. Move it or use --dotfiles-dir $default_dir."
+        ok "$default_dir already points to $DOTFILES_DIR"
+    else
+        ln -s "$DOTFILES_DIR" "$default_dir"
+        ok "Created compatibility symlink: $default_dir -> $DOTFILES_DIR"
+    fi
 }
 
 echo -e "${GREEN}🚀 Starting workstation bootstrap...${NC}"
@@ -230,13 +266,14 @@ if [ ! -f "$SSH_KEY_PATH" ]; then
     echo "  ssh-keygen -t ed25519 -C \"${GITHUB_USER}@workstation\" -f \"$SSH_KEY_PATH\" -N \"\""
     echo "  cat \"${SSH_KEY_PATH}.pub\""
     echo "Paste the key at https://github.com/settings/keys, then verify:"
-    echo "  ssh-keyscan github.com >> ~/.ssh/known_hosts"
+    echo "  Known_hosts is seeded automatically from GitHub's published host keys"
     echo "  ssh -i \"$SSH_KEY_PATH\" -o IdentitiesOnly=yes -T git@github.com"
     exit 1
 fi
 
-# Pre-seed known_hosts so ssh never prompts interactively (idempotent).
-ssh-keyscan github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+# Pre-seed known_hosts from GitHub's published keys so ssh never prompts
+# interactively and we do not trust unauthenticated ssh-keyscan output.
+seed_github_known_hosts
 
 # ssh -T always exits 1 (GitHub denies shell access); capture stderr too.
 SSH_OUTPUT=$(ssh -i "$SSH_KEY_PATH" -o IdentitiesOnly=yes -T git@github.com 2>&1 || true)
@@ -286,6 +323,7 @@ else
         fi
     fi
 fi
+ensure_dotfiles_compat_link
 cd "$DOTFILES_DIR"
 
 # ── Step 4: Install Nix (Determinate Systems) ────────────────────────────────
@@ -306,7 +344,7 @@ fi
 
 # ── Step 5: Apply Home Manager via Flake ──────────────────────────────────────
 # Home Manager owns: git identity, delta config, git aliases, zsh, starship,
-# direnv, fzf, and all CLI packages declared in home.nix.
+# direnv, fzf, and all CLI packages declared in Home Manager modules.
 # Do NOT write git config anywhere else in this script.
 step "Applying Home Manager configuration"
 # Fully qualified GitHub URI bypasses local registry lookup failures on fresh
@@ -352,7 +390,7 @@ else
 fi
 
 # ── Step 7: Verify GitHub CLI ─────────────────────────────────────────────────
-# gh is declared in home.nix packages; apt is a fallback for first-run timing
+# gh is declared in Home Manager packages; apt is a fallback for first-run timing
 # issues where HM hasn't sourced yet.
 step "Verifying GitHub CLI"
 if ! command -v gh &>/dev/null && [ ! -f "$HOME/.nix-profile/bin/gh" ]; then
@@ -406,10 +444,14 @@ ok "Dotfile symlinks complete (tmux managed by HM, wezterm by setup-desktop.sh)"
 step "Staging LazyVim starter"
 NVIM_DIR="$DOTFILES_DIR/nvim"
 if [ ! -s "$NVIM_DIR/init.lua" ]; then
-    git clone --depth 1 https://github.com/LazyVim/starter /tmp/lazyvim-starter
-    mkdir -p "$NVIM_DIR"
-    cp -r /tmp/lazyvim-starter/. "$NVIM_DIR/"
-    rm -rf "$NVIM_DIR/.git" /tmp/lazyvim-starter
+    (
+        LAZY_STARTER_DIR="$(mktemp -d /tmp/lazyvim-starter.XXXXXX)"
+        trap 'rm -rf "$LAZY_STARTER_DIR"' EXIT
+        git clone --depth 1 https://github.com/LazyVim/starter "$LAZY_STARTER_DIR"
+        mkdir -p "$NVIM_DIR"
+        cp -r "$LAZY_STARTER_DIR/." "$NVIM_DIR/"
+        rm -rf "$NVIM_DIR/.git"
+    )
     ok "LazyVim starter staged into dotfiles/nvim/"
 else
     ok "LazyVim already staged – skipping"
@@ -438,11 +480,17 @@ echo ""
 echo -e "${YELLOW}Manual steps required before first use:${NC}"
 echo "  1. Log out and back in (activates Docker group membership and zsh)"
 echo "  2. gh auth login  (device flow — prints a code; open the URL on any browser)"
-echo "  3. Verify SSH remote: cd ~/dotfiles && git remote -v"
+echo "  3. Verify SSH remote: cd \"$DOTFILES_DIR\" && git remote -v"
 echo "     (should show: git@github.com:${GITHUB_USER}/dotfiles.git)"
-echo "  4. Commit generated lock/state files if present:"
-echo "     cd ~/dotfiles && git status --short"
-echo "     git add flake.lock nvim/lazy-lock.json && git commit -m \"chore: record initial generated locks\""
+echo "  4. Create and back up your SOPS Age key:"
+echo "     mkdir -p ~/.config/sops/age && age-keygen -o ~/.config/sops/age/keys.txt"
+echo "     age-keygen -y ~/.config/sops/age/keys.txt"
+echo "     (paste the public recipient into $DOTFILES_DIR/.sops.yaml)"
+echo "  5. Commit generated lock/state files if present:"
+echo "     cd \"$DOTFILES_DIR\" && git status --short"
+echo "     git add flake.lock"
+echo "     test ! -f nvim/lazy-lock.json || git add nvim/lazy-lock.json"
+echo "     git commit -m \"chore: record initial generated locks\""
 echo ""
 echo "Verification commands:"
 echo "  nix --version"
@@ -450,6 +498,7 @@ echo "  home-manager --version"
 echo "  echo \$SHELL"
 echo "  docker ps"
 echo "  gh auth status"
+echo "  sops --version && age --version"
 echo "  direnv --version && devenv --version && nvim --version"
 echo ""
 echo "Optional desktop next step (XFCE4 + XRDP + WezTerm + VS Code):"
@@ -458,6 +507,6 @@ echo "  chmod +x setup-desktop.sh && ./setup-desktop.sh --dotfiles-dir \"$DOTFIL
 echo ""
 echo "Back up keys that dotfiles cannot recover:"
 echo "  $SSH_KEY_PATH"
-echo "  ~/.config/sops/age/keys.txt  (if you later adopt SOPS + Age)"
+echo "  ~/.config/sops/age/keys.txt"
 echo ""
-echo "Then verify the installation with the checklist in §2.6"
+echo "Then verify the installation with docs/tutorials/first-workstation.md#7-verify-the-workstation"

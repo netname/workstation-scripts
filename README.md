@@ -1,120 +1,76 @@
 # workstation-scripts
 
-[![CI](https://github.com/netname/workstation-scripts/actions/workflows/ci.yml/badge.svg)](https://github.com/netname/workstation-scripts/actions/workflows/ci.yml)
+Public bootstrap scripts and starter templates for building a reproducible Ubuntu development workstation with Nix, Home Manager, Devenv, Docker Compose, tmux, Neovim, VS Code, and SOPS + Age.
 
-Public half of a two-repository workstation setup. Contains the bootstrap scripts and starter templates that turn a fresh Ubuntu machine into a reproducible development environment using Nix, Home Manager, Devenv, and Docker Compose.
+## Start Here
 
-## The two-repository model
+| If you want to... | Read this |
+|---|---|
+| Understand what this repo is for | [docs/overview.md](docs/overview.md) |
+| Build your first workstation | [docs/tutorials/first-workstation.md](docs/tutorials/first-workstation.md) |
+| Add another machine from existing dotfiles | [docs/how-to/add-another-machine.md](docs/how-to/add-another-machine.md) |
+| Troubleshoot a broken setup | [docs/how-to/troubleshoot-common-problems.md](docs/how-to/troubleshoot-common-problems.md) |
+| Look up scripts, templates, or config details | [Reference](docs/README.md#reference) |
+| Understand the design decisions | [Explanation](docs/README.md#explanation) |
+
+The full documentation index is [docs/README.md](docs/README.md).
+
+## The Two-Repository Model
+
+This repository is the public half of the setup. It contains scripts and templates that can be fetched anonymously on a fresh Ubuntu machine.
+
+Your private `dotfiles` repository is the source of truth for personal configuration: git identity, Home Manager modules, shell config, editor config, encrypted secret wiring, and host profiles.
 
 | Repository | Visibility | Contains |
 |---|---|---|
-| **workstation-scripts** (this repo) | Public | Bootstrap scripts fetchable via `curl`; Nix config templates |
-| **dotfiles** | Private | Your `flake.nix`, `home.nix`, WezTerm/tmux config, Neovim config |
+| `workstation-scripts` | Public | Bootstrap scripts, desktop setup script, dotfiles initializer, templates |
+| `dotfiles` | Private | Your personal workstation configuration and encrypted-secret scaffolding |
 
-Scripts in this repo are fetched anonymously by `curl` on a fresh machine that has no SSH key yet. Your personal config stays private in your dotfiles repo, cloned only after an SSH key is registered. See [docs/0-Overview.md](docs/0-Overview.md) for the full bootstrap flow.
+The split matters because a brand-new machine usually has no SSH key yet. Public scripts can be downloaded with `wget` or `curl`; private dotfiles are cloned only after SSH access is ready.
 
-## Which path should I take?
+## Quick Start for Existing Repositories
 
-| Situation | Start here |
-|---|---|
-| New user, no repositories, or no dotfiles yet | Read [docs/0-Overview.md](docs/0-Overview.md), then follow [docs/2-Installation.md](docs/2-Installation.md) |
-| Already have `workstation-scripts` and a populated `dotfiles` repo | Use the quick start below |
-| Adding another machine from existing dotfiles | Use the quick start below, or read [docs/2-Installation.md §2.4](docs/2-Installation.md#24-the-bootstrap--one-command-to-a-working-workstation) |
-| Want a graphical desktop | Run the headless bootstrap first, then follow [docs/6-Desktop.md](docs/6-Desktop.md) |
-
-> [!important]
-> If you do not already have both repositories, do not run the bootstrap yet. The bootstrap expects a pushed private `dotfiles` repository with populated `flake.nix` and `home.nix`; it does not create that repository for you. First-time setup is covered in [docs/2-Installation.md](docs/2-Installation.md).
-
-## Quick start for existing repos
-
-**Prerequisites:** Ubuntu 22.04 or 24.04 (bare metal, VM, or cloud). An SSH key registered on GitHub — generate one if you don't have it:
+Use this only when your private `dotfiles` repository already exists and contains the generated templates.
 
 ```bash
 ssh-keygen -t ed25519 -C "yourname@workstation" -f ~/.ssh/id_ed25519 -N ""
-cat ~/.ssh/id_ed25519.pub   # paste this at https://github.com/settings/keys
-ssh -T git@github.com       # verify: should print "Hi yourusername!"
-```
+cat ~/.ssh/id_ed25519.pub
+# Paste the public key at https://github.com/settings/keys
+ssh -T git@github.com
 
-**Bootstrap:**
-
-```bash
-# 1. Fetch the script
 wget -qO bootstrap.sh \
   https://raw.githubusercontent.com/yourusername/workstation-scripts/main/scripts/bootstrap.sh
 
-# 2. Run — fully unattended once the SSH key is in place (~20–40 min)
 bash bootstrap.sh \
   --github-user yourusername \
   --dotfiles-repo git@github.com:yourusername/dotfiles.git
 ```
 
-After it completes:
+For first-time setup, follow the full guided path in [First Workstation](docs/tutorials/first-workstation.md). Do not run the bootstrap until the private `dotfiles` repository exists and has been pushed.
 
-```bash
-# Required before first use:
-# 1. Log out and back in  (activates Docker group + zsh login shell)
-# 2. gh auth login        (device flow — opens a browser URL)
-```
+## Repository Layout
 
-**Optional graphical desktop** (XFCE4 + XRDP + WezTerm + VS Code):
-
-```bash
-wget -qO setup-desktop.sh \
-  https://raw.githubusercontent.com/yourusername/workstation-scripts/main/scripts/setup-desktop.sh
-bash setup-desktop.sh
-```
-
-## Repository layout
-
-```
+```text
 workstation-scripts/
-├── docs/          Documentation — read docs/0-Overview.md first
-├── scripts/       bootstrap.sh and setup-desktop.sh
-└── templates/     Starter Nix config files to copy into your dotfiles repo
+  docs/       Diataxis-organized documentation
+  scripts/    bootstrap.sh, init-dotfiles.sh, setup-desktop.sh
+  templates/  Starter files copied into your private dotfiles repo
+  tools/      Local validation helpers used by CI
 ```
 
-## Templates
+Authoritative lookup pages:
 
-Copy these into your private `dotfiles` repository as a starting point. First-time users do this as part of the repository setup flow in [docs/2-Installation.md](docs/2-Installation.md); the quick start above assumes this has already happened.
+- [Scripts reference](docs/reference/scripts.md)
+- [Bootstrap options](docs/reference/bootstrap-options.md)
+- [Templates reference](docs/reference/templates.md)
+- [Repository layout](docs/reference/repository-layout.md)
 
-| File | Destination in dotfiles | Purpose |
-|---|---|---|
-| `templates/flake.nix` | `flake.nix` | Home Manager flake entry point |
-| `templates/home.nix` | `home.nix` | Global packages, shell, git, prompt |
-| `templates/devenv.nix` | `projectroot/devenv.nix` | Per-project environment |
-| `templates/docker-compose.yml` | `projectroot/docker-compose.yml` | MariaDB + Redis services |
-| `templates/sessionizer` | `scripts/sessionizer` | tmux project switcher |
-
-## CI
-
-GitHub Actions runs on every push and pull request to `main`:
-
-- **Syntax check** — `bash -n` on all shell scripts
-- **Shellcheck** — static analysis on `scripts/bootstrap.sh`, `scripts/setup-desktop.sh`, and `templates/sessionizer`
-
-The badge at the top of this file reflects the current status. If it is red, check the [Actions tab](https://github.com/yourusername/workstation-scripts/actions) for the failing step.
-
-To run the same checks locally before pushing:
+## Local Checks
 
 ```bash
-bash -n scripts/bootstrap.sh && bash -n scripts/setup-desktop.sh
-bash -n scripts/check-consistency.sh
-shellcheck scripts/bootstrap.sh scripts/setup-desktop.sh scripts/check-consistency.sh templates/sessionizer
+bash -n scripts/bootstrap.sh scripts/init-dotfiles.sh scripts/setup-desktop.sh
+bash -n scripts/check-consistency.sh templates/check-secrets.sh templates/sessionizer
+shellcheck scripts/bootstrap.sh scripts/init-dotfiles.sh scripts/setup-desktop.sh scripts/check-consistency.sh templates/check-secrets.sh templates/sessionizer
 bash scripts/check-consistency.sh
+pwsh -NoProfile -File tools/check-markdown-links.ps1
 ```
-
-## Documentation
-
-Start here: **[docs/0-Overview.md](docs/0-Overview.md)**
-
-| Doc | Covers |
-|---|---|
-| [0-Overview.md](docs/0-Overview.md) | What you're building and why |
-| [1-Stack.md](docs/1-Stack.md) | Six-layer model, Nix fundamentals |
-| [2-Installation.md](docs/2-Installation.md) | Step-by-step from zero to working |
-| [3-Terminal.md](docs/3-Terminal.md) | WezTerm, tmux, sessionizer, fonts |
-| [4-Projects.md](docs/4-Projects.md) | Devenv, Docker, git tooling |
-| [5-Editors.md](docs/5-Editors.md) | Neovim + LazyVim, VS Code |
-| [6-Desktop.md](docs/6-Desktop.md) | XFCE4 + XRDP (optional graphical desktop) |
-| [7-Troubleshooting.md](docs/7-Troubleshooting.md) | Per-tool problem/fix reference |
-| [8-DevWorkflows.md](docs/8-DevWorkflows.md) | Day-to-day development workflows |

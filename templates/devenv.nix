@@ -6,8 +6,8 @@
 # Update:    devenv update  (pulls latest locked versions)
 # Roll back: git checkout devenv.nix devenv.lock && devenv update
 #
-# See docs/4-Projects.md §8.3 for a step-by-step setup walkthrough.
-# See docs/1-Stack.md §1.7 for the Devenv vs Home Manager distinction.
+# See docs/tutorials/first-project-environment.md for a guided setup.
+# See docs/explanation/project-tooling-model.md for the Devenv vs Home Manager distinction.
 { pkgs, ... }: {
 
   # ── Packages ─────────────────────────────────────────────────────────────────
@@ -37,10 +37,11 @@
 
   # ── Python (ERPNext v16 / uv-managed projects) ───────────────────────────────
   # v16 uses uv to manage the interpreter and virtualenv. Omit the
-  # languages.python block entirely and install uv via home.nix instead.
-  # Before running `direnv allow`, install the interpreter once:
-  #   uv python install 3.14
-  # See docs/4-Projects.md §8.3 Step 2 for the full v16 flow.
+  # languages.python block entirely and use the uv binary provided by Home
+  # Manager in modules/cli-tools.nix.
+  # Before running `direnv allow`, install the project-required interpreter once:
+  #   uv python install <required-python-version>
+  # See docs/reference/project-environment-config.md for project environment conventions.
 
   # ── JavaScript / TypeScript ──────────────────────────────────────────────────
   # languages.javascript = {
@@ -50,26 +51,38 @@
 
   # ── Environment variables ─────────────────────────────────────────────────────
   # Exported into the shell when the environment activates.
-  # Never put secrets here — .envrc is committed to git.
-  # Load secrets from .env via enterShell below instead.
+  # Put only non-secret values here: local URLs, feature flags, environment names.
+  # Never put API keys, passwords, or tokens here: Nix expressions can leak into
+  # the store or logs. Shared secrets belong in SOPS-encrypted files; personal
+  # throwaway secrets can stay in ignored .env files.
   env = {
-    # DATABASE_URL = "mysql://root:root@localhost:3306/mydb";
-    # REDIS_URL    = "redis://localhost:6379";
+    # APP_ENV = "development";
+    # SERVICE_HOST = "127.0.0.1";
   };
 
   # ── Shell hook ───────────────────────────────────────────────────────────────
   # Runs each time the environment activates (on `cd` into the directory).
-  # Loads a local .env file if present — keep .env in .gitignore.
-  # See docs/1-Stack.md §1.10 for the secrets pattern.
+  # Secret tiers:
+  #   1. SOPS-encrypted shared secrets: commit secrets/development.env encrypted.
+  #   2. Local-only personal secrets: keep .env ignored and uncommitted.
+  # See docs/explanation/secrets-model.md for the full model.
   enterShell = ''
+    if [ -f secrets/development.env ]; then
+      set -a; source <(sops -d secrets/development.env); set +a
+    fi
+
     if [ -f .env ]; then
       set -a; source .env; set +a
     fi
+
+    # Derive connection URLs after SOPS and .env values have been loaded.
+    # export DATABASE_URL="mysql://${MARIADB_USER}:${MARIADB_PASSWORD}@127.0.0.1:${MARIADB_PORT:-3306}/${MARIADB_DATABASE:-mydb}"
+    # export REDIS_URL="redis://127.0.0.1:${REDIS_PORT:-6379}"
   '';
 
   # ── Git hooks (optional) ─────────────────────────────────────────────────────
   # Enforces code quality checks before every commit — shared across the team.
-  # See docs/4-Projects.md §8.8 for the full git-hooks setup.
+  # See docs/reference/project-environment-config.md for project environment conventions.
   #
   # git-hooks.hooks = {
   #   ruff.enable = true;

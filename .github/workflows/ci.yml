@@ -6,12 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Shell lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Install shellcheck
         run: sudo apt-get install -y shellcheck
@@ -19,16 +22,24 @@ jobs:
       - name: Syntax check (bash -n)
         run: |
           bash -n scripts/bootstrap.sh
+          bash -n scripts/init-dotfiles.sh
           bash -n scripts/setup-desktop.sh
           bash -n scripts/check-consistency.sh
+          bash -n templates/check-secrets.sh
           bash -n templates/sessionizer
 
       - name: Shellcheck
         run: |
           shellcheck scripts/bootstrap.sh
+          shellcheck scripts/init-dotfiles.sh
           shellcheck scripts/setup-desktop.sh
           shellcheck scripts/check-consistency.sh
+          shellcheck templates/check-secrets.sh
           shellcheck templates/sessionizer
 
       - name: Consistency checks
         run: bash scripts/check-consistency.sh
+
+      - name: Markdown links
+        shell: pwsh
+        run: ./tools/check-markdown-links.ps1

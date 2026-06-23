@@ -7,13 +7,15 @@
 #   bind-key -n C-f display-popup -E "~/.local/bin/sessionizer"
 #
 # How it works:
-#   1. Finds all directories one level deep under each search path
-#   2. Presents them in fzf for fuzzy selection
-#   3. Creates a new tmux session named after the selected directory (if one
+#   1. Finds all directories one level deep under each search root
+#   2. Adds pinned directories such as ~/dotfiles directly
+#   3. Presents them in fzf for fuzzy selection
+#   4. Creates a new tmux session named after the selected directory (if one
 #      doesn't already exist), then switches to it
 #
-# To add more search paths, append them to the SEARCH_PATHS array below.
-# See docs/3-Terminal.md for the full sessionizer workflow.
+# To add more project roots, append them to SEARCH_ROOTS.
+# To add exact directories, append them to PINNED_PATHS.
+# See docs/reference/terminal-config.md for the terminal/sessionizer model.
 
 set -euo pipefail
 
@@ -23,28 +25,47 @@ export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:$PATH"
 
 # ── Search paths ──────────────────────────────────────────────────────────────
 # Directories listed here are scanned one level deep for project folders.
-SEARCH_PATHS=(
+SEARCH_ROOTS=(
     "$HOME/projects"
+)
+
+# Directories listed here are added as exact selectable targets.
+PINNED_PATHS=(
     "$HOME/dotfiles"
 )
 
-# Build the find command dynamically from the search paths array.
+# Build the find command dynamically from the search roots array.
 find_args=()
-for path in "${SEARCH_PATHS[@]}"; do
+for path in "${SEARCH_ROOTS[@]}"; do
     if [ -d "$path" ]; then
         find_args+=("$path")
     fi
 done
 
-if [ ${#find_args[@]} -eq 0 ]; then
+has_pinned_path=false
+for path in "${PINNED_PATHS[@]}"; do
+    if [ -d "$path" ]; then
+        has_pinned_path=true
+        break
+    fi
+done
+
+if [ ${#find_args[@]} -eq 0 ] && [ "$has_pinned_path" = false ]; then
     echo "sessionizer: no search paths found" >&2
     exit 1
 fi
 
 # ── Selection ─────────────────────────────────────────────────────────────────
 selected=$( \
-    find "${find_args[@]}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null \
-    | sort \
+    {
+        for path in "${PINNED_PATHS[@]}"; do
+            [ -d "$path" ] && printf '%s\n' "$path"
+        done
+        if [ ${#find_args[@]} -gt 0 ]; then
+            find "${find_args[@]}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null
+        fi
+    } \
+    | sort -u \
     | fzf --prompt="project: " --height=40% --reverse \
     || true \
 )
@@ -54,8 +75,8 @@ if [ -z "$selected" ]; then
 fi
 
 # ── Session name ──────────────────────────────────────────────────────────────
-# tmux session names cannot contain spaces or dots — replace them with underscores.
-selected_name=$(basename "$selected" | tr ' .' '_')
+# Keep tmux target names simple: replace spaces, punctuation, and symbols.
+selected_name=$(basename "$selected" | sed 's/[^A-Za-z0-9_-]/_/g')
 
 # ── Switch or create ──────────────────────────────────────────────────────────
 if ! tmux has-session -t "$selected_name" 2>/dev/null; then

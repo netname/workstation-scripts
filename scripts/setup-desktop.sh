@@ -17,13 +17,13 @@
 #   10. Set WezTerm as XFCE default terminal + Ctrl+Alt+T shortcut
 #
 # VS Code extensions are NOT installed by this script — install them manually
-# after first login (see docs/5-Editors.md §11.3):
+# after first login (see docs/how-to/add-graphical-desktop.md):
 #   jq -r '.recommendations[]' ~/dotfiles/vscode/extensions.json | xargs -I{} code --install-extension {}
 #
-# JetBrainsMono Nerd Font is installed by Home Manager (home.nix → nerd-fonts.jetbrains-mono).
+# JetBrainsMono Nerd Font is installed by Home Manager (modules/cli-tools.nix -> nerd-fonts.jetbrains-mono).
 # No manual font download is required here.
 #
-# After this script: reboot, then connect via RDP (see §Installation Step 6).
+# After this script: reboot, then connect via RDP.
 set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -86,13 +86,13 @@ validate_host() {
     require_command systemctl
     require_command getent
 
-    [ -r /etc/os-release ] || die "/etc/os-release not found; this script supports Ubuntu 22.04 and 24.04"
+    [ -r /etc/os-release ] || die "/etc/os-release not found; this script supports Ubuntu 22.04, 24.04, and 26.04"
     # shellcheck disable=SC1091
     . /etc/os-release
-    [ "${ID:-}" = "ubuntu" ] || die "Unsupported OS: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04 or 24.04."
+    [ "${ID:-}" = "ubuntu" ] || die "Unsupported OS: ${PRETTY_NAME:-unknown}. Use Ubuntu 22.04, 24.04, or 26.04."
     case "${VERSION_ID:-}" in
-        22.04|24.04) ;;
-        *) die "Unsupported Ubuntu version: ${VERSION_ID:-unknown}. Use Ubuntu 22.04 or 24.04." ;;
+        22.04|24.04|26.04) ;;
+        *) die "Unsupported Ubuntu version: ${VERSION_ID:-unknown}. Use Ubuntu 22.04, 24.04, or 26.04." ;;
     esac
 
     case "$(uname -m)" in
@@ -110,11 +110,32 @@ print_config() {
     echo ""
 }
 
+ensure_dotfiles_compat_link() {
+    local default_dir="$HOME/dotfiles"
+    local target_real
+    local default_real
+
+    [ "$DOTFILES_DIR" != "$default_dir" ] || return 0
+
+    target_real="$(cd "$DOTFILES_DIR" && pwd -P)"
+
+    if [ -e "$default_dir" ] || [ -L "$default_dir" ]; then
+        [ -d "$default_dir" ] || die "$default_dir exists but is not a directory or symlink to a directory"
+        default_real="$(cd "$default_dir" && pwd -P)"
+        [ "$default_real" = "$target_real" ] || die "$default_dir already points to a different directory. Move it or use --dotfiles-dir $default_dir."
+        ok "$default_dir already points to $DOTFILES_DIR"
+    else
+        ln -s "$DOTFILES_DIR" "$default_dir"
+        ok "Created compatibility symlink: $default_dir -> $DOTFILES_DIR"
+    fi
+}
+
 echo -e "${GREEN}Starting desktop setup...${NC}"
 step "Running preflight checks"
 validate_config
 validate_host
 print_config
+ensure_dotfiles_compat_link
 sudo -v
 ok "Preflight checks passed"
 
@@ -133,7 +154,7 @@ ok "XFCE4 installed"
 
 # ── 2. LightDM ────────────────────────────────────────────────────────────────
 step "Installing LightDM"
-DEBIAN_FRONTEND=noninteractive sudo apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     lightdm lightdm-gtk-greeter lightdm-gtk-greeter-settings
 sudo systemctl set-default graphical.target
 echo "/usr/sbin/lightdm" | sudo tee /etc/X11/default-display-manager > /dev/null
@@ -153,10 +174,10 @@ sudo adduser xrdp ssl-cert
 
 # XFCE session files – tell XRDP which desktop to launch
 echo "startxfce4" > "$HOME/.xsession"
-{
-    echo "export DESKTOP_SESSION=xfce"
-    echo "export XDG_SESSION_DESKTOP=xfce"
-} >> "$HOME/.xsessionrc"
+cat > "$HOME/.xsessionrc" <<'EOF'
+export DESKTOP_SESSION=xfce
+export XDG_SESSION_DESKTOP=xfce
+EOF
 
 sudo systemctl restart xrdp
 ok "XRDP installed and configured"
@@ -178,10 +199,13 @@ ok "Polkit shutdown rule applied"
 # ── 5. Google Chrome ──────────────────────────────────────────────────────────
 step "Installing Google Chrome"
 if ! command -v google-chrome &>/dev/null; then
-    wget -q -O /tmp/google-chrome.deb \
-        https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-    sudo apt-get install -y /tmp/google-chrome.deb || sudo apt-get -f install -y
-    rm -f /tmp/google-chrome.deb
+    (
+        CHROME_DEB="$(mktemp /tmp/google-chrome.XXXXXX.deb)"
+        trap 'rm -f "$CHROME_DEB"' EXIT
+        wget -q -O "$CHROME_DEB" \
+            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        sudo apt-get install -y "$CHROME_DEB" || sudo apt-get -f install -y
+    )
     ok "Google Chrome installed"
 else
     ok "Google Chrome already installed – skipping"
@@ -199,7 +223,7 @@ ok "Noto fonts installed"
 # ── 7. WezTerm via Flatpak ────────────────────────────────────────────────────
 step "Installing WezTerm"
 sudo apt-get install -y flatpak xdg-desktop-portal-gtk
-if ! command -v wezterm &>/dev/null && ! flatpak list --user 2>/dev/null | grep -q wezterm; then
+if ! command -v wezterm &>/dev/null && ! flatpak info --user org.wezfurlong.wezterm >/dev/null 2>&1; then
     flatpak remote-add --user --if-not-exists flathub \
         https://flathub.org/repo/flathub.flatpakrepo
     flatpak install --user -y flathub org.wezfurlong.wezterm
@@ -211,13 +235,17 @@ else
     ok "WezTerm already installed – skipping"
 fi
 
-# Grant WezTerm's Flatpak sandbox read access to the Nix store.
-# Home Manager installs JetBrainsMono Nerd Font into /nix/store and exposes it
-# via ~/.nix-profile/share/fonts. Flatpak's bubblewrap sandbox does not mount
-# /nix by default, so WezTerm cannot follow the symlink chain to the actual
-# font files — producing the "Unable to load font" warning on startup.
-flatpak override --user --filesystem=/nix:ro org.wezfurlong.wezterm
-ok "Flatpak /nix access granted (Nix-managed fonts now visible to WezTerm)"
+if flatpak info --user org.wezfurlong.wezterm >/dev/null 2>&1; then
+    # Grant WezTerm's Flatpak sandbox read access to the Nix store.
+    # Home Manager installs JetBrainsMono Nerd Font into /nix/store and exposes it
+    # via ~/.nix-profile/share/fonts. Flatpak's bubblewrap sandbox does not mount
+    # /nix by default, so WezTerm cannot follow the symlink chain to the actual
+    # font files — producing the "Unable to load font" warning on startup.
+    flatpak override --user --filesystem=/nix:ro org.wezfurlong.wezterm
+    ok "Flatpak /nix access granted (Nix-managed fonts now visible to WezTerm)"
+else
+    warn "WezTerm Flatpak not installed for this user; skipping Flatpak /nix override"
+fi
 
 # ── 8. wezterm.lua symlink ────────────────────────────────────────────────────
 step "Symlinking wezterm.lua"
@@ -226,7 +254,7 @@ if [ -f "$DOTFILES_DIR/wezterm/wezterm.lua" ]; then
     ln -sf "$DOTFILES_DIR/wezterm/wezterm.lua" "$HOME/.config/wezterm/wezterm.lua"
     ok "wezterm.lua symlinked"
 else
-    warn "~/dotfiles/wezterm/wezterm.lua not found – skipping symlink"
+    warn "$DOTFILES_DIR/wezterm/wezterm.lua not found – skipping symlink"
 fi
 
 # ── 9. VS Code ───────────────────────────────────────────────────────────────
@@ -289,8 +317,9 @@ echo -e "${GREEN}✅ Desktop setup complete.${NC}"
 echo ""
 echo "Next steps:"
 echo "  1. Reboot to activate the display manager: sudo reboot"
-echo "  2. Connect via RDP from Windows (see docs/6-Desktop.md §L.2 for settings)"
-echo "  3. Ctrl+Alt+T opens WezTerm; configure tiling shortcuts via docs/6-Desktop.md §L.3"
+echo "  2. Connect via RDP from Windows (see docs/how-to/add-graphical-desktop.md)"
+echo "  3. Ctrl+Alt+T opens WezTerm"
+echo "  4. Verify the desktop with docs/how-to/add-graphical-desktop.md#3-verify-local-desktop-tools"
 echo ""
 echo "Verification commands after reboot:"
 echo "  systemctl status xrdp --no-pager"
